@@ -1,6 +1,7 @@
 """Shared training and inference cleaning for solar panel input features."""
 
 from pathlib import Path
+import re
 
 import pandas as pd
 
@@ -17,7 +18,73 @@ NUMERIC_FEATURES = (
     'module_temperature', 'cloud_coverage', 'wind_speed', 'pressure',
 )
 REQUIRED_FEATURES = NUMERIC_FEATURES + CATEGORICAL_COLUMNS
+UPLOAD_CATEGORY_DEFAULTS = {
+    'string_id': 'A1',
+    'error_code': 'missing',
+    'installation_type': 'missing',
+}
+_EXTERNAL_STRING_ID_PATTERN = re.compile(
+    r'STR-(?:00[1-9]|0[1-9][0-9]|100)', re.IGNORECASE
+)
+COLUMN_ALIASES = {
+    'soiling': 'soiling_ratio',
+    'cleanliness': 'soiling_ratio',
+    'cleanliness_index': 'soiling_ratio',
+    'module_temp': 'module_temperature',
+    'panel_temperature': 'module_temperature',
+    'cloud_cover': 'cloud_coverage',
+    'wind': 'wind_speed',
+    'age': 'panel_age',
+    'maintenance': 'maintenance_count',
+    'maintenance_counts': 'maintenance_count',
+    'string': 'string_id',
+    'installation': 'installation_type',
+    'error': 'error_code',
+}
 MODEL_DIR = Path(__file__).resolve().parent.parent / 'models'
+
+
+class MissingColumnsError(ValueError):
+    """Required numeric columns were absent from an uploaded data frame."""
+
+    def __init__(self, missing, found):
+        self.missing = tuple(missing)
+        self.found = tuple(found)
+        super().__init__('missing_required_columns')
+
+
+def is_supported_string_identifier(value):
+    """Recognize model levels and the accepted external panel-ID format."""
+    if pd.isna(value):
+        return False
+    normalized = str(value).strip()
+    model_levels = {
+        level.casefold() for level in CATEGORICAL_LEVELS['string_id']
+    }
+    return (
+        normalized.casefold() in model_levels
+        or _EXTERNAL_STRING_ID_PATTERN.fullmatch(normalized) is not None
+    )
+
+
+def normalize_columns(df):
+    """Normalize common CSV header styles and known feature aliases."""
+    normalized = []
+    for column in df.columns:
+        name = str(column).strip().lower()
+        name = re.sub(r'\s*\([^)]*\)\s*$', '', name)
+        name = re.sub(r'[\s-]+', '_', name)
+        name = re.sub(r'_+', '_', name).strip('_')
+        normalized.append(COLUMN_ALIASES.get(name, name))
+
+    duplicate_names = sorted({
+        name for name in normalized if normalized.count(name) > 1
+    })
+    if duplicate_names:
+        raise ValueError('duplicate_columns')
+    result = df.copy()
+    result.columns = normalized
+    return result
 
 
 def _clean_numeric_and_clip(df):
@@ -35,24 +102,60 @@ def encode_categoricals(df):
     """Encode all rows against the fixed training vocabulary and baseline."""
     encoded = df.drop(columns=list(CATEGORICAL_COLUMNS), errors='ignore').copy()
     for column, levels in CATEGORICAL_LEVELS.items():
-        values = df[column].fillna('missing')
-        unknown = sorted(set(values.astype(str)) - set(levels))
+        values = df[column].fillna('missing').astype(str).str.strip()
+        level_lookup = {level.casefold(): level for level in levels}
+        canonical = values.map(
+            lambda value: level_lookup.get(value.casefold(), value)
+        )
+        unknown = sorted(set(canonical) - set(levels))
         if unknown:
+            examples = ', '.join(value[:24] for value in unknown[:5])
+            remaining = len(unknown) - 5
+            if remaining > 0:
+                examples += f', and {remaining} more'
             raise ValueError(
-                f"Unknown {column} value(s): {', '.join(unknown)}. "
+                f"Unknown {column} value(s): {examples}. "
                 f"Allowed values: {', '.join(levels)}."
             )
         for level in levels[1:]:
-            encoded[f'{column}_{level}'] = (values == level).astype('int8')
+            encoded[f'{column}_{level}'] = (
+                canonical == level
+            ).astype('int8')
     return encoded
 
 
-def _check_required_columns(df):
-    missing = [column for column in REQUIRED_FEATURES if column not in df.columns]
+def _check_required_columns(df, required=REQUIRED_FEATURES):
+    missing = [column for column in required if column not in df.columns]
     if missing:
-        raise ValueError(
-            'Missing required column(s): ' + ', '.join(missing) + '.'
+        raise MissingColumnsError(missing, df.columns)
+
+
+def _clean_inference_frame(df, medians_path=None):
+    normalized = normalize_columns(df)
+    _check_required_columns(normalized, NUMERIC_FEATURES)
+    cleaned = normalized.copy()
+    for column, default in UPLOAD_CATEGORY_DEFAULTS.items():
+        if column not in cleaned.columns:
+            cleaned[column] = default
+    cleaned = _clean_numeric_and_clip(cleaned.loc[:, REQUIRED_FEATURES])
+
+    path = Path(medians_path) if medians_path else MODEL_DIR / 'training_medians.joblib'
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent.parent / path
+    if not path.is_file():
+        raise FileNotFoundError(
+            f'Training medians were not found at {path}; train the model first.'
         )
+    from ml.artifacts import load_artifacts
+    medians = load_artifacts(
+        model_path=path.parent / 'best_model.joblib',
+        model_dir=path.parent,
+    )['training_medians']
+    for column in NUMERIC_FEATURES:
+        if column not in medians:
+            raise ValueError(f'Training medians are missing numeric feature {column}.')
+        cleaned[column] = cleaned[column].fillna(medians[column])
+    return cleaned
 
 
 def clean_and_encode_dataset(input_path, output_path=None):
@@ -88,29 +191,74 @@ def clean_and_encode_dataset(input_path, output_path=None):
 
 def clean_for_inference(df, medians_path=None):
     """Clean unlabeled raw inputs with medians learned from the training split."""
-    _check_required_columns(df)
-    cleaned = _clean_numeric_and_clip(df.loc[:, REQUIRED_FEATURES])
-
-    path = Path(medians_path) if medians_path else MODEL_DIR / 'training_medians.joblib'
-    if not path.is_absolute():
-        path = Path(__file__).resolve().parent.parent / path
-    if not path.is_file():
-        raise FileNotFoundError(
-            f'Training medians were not found at {path}; train the model first.'
-        )
-    from ml.artifacts import load_artifacts
-    medians = load_artifacts(
-        model_path=path.parent / 'best_model.joblib',
-        model_dir=path.parent,
-    )['training_medians']
-    for column in NUMERIC_FEATURES:
-        if column not in medians:
-            raise ValueError(f'Training medians are missing numeric feature {column}.')
-        cleaned[column] = cleaned[column].fillna(medians[column])
-
+    normalized = normalize_columns(df)
+    _check_required_columns(normalized)
+    cleaned = _clean_inference_frame(normalized, medians_path=medians_path)
     for column in CATEGORICAL_COLUMNS:
         cleaned[column] = cleaned[column].fillna('missing')
     return encode_categoricals(cleaned)
+
+
+def clean_for_upload(df, medians_path=None):
+    """Prepare batch inputs with optional categories and bounded notices."""
+    normalized = normalize_columns(df)
+    _check_required_columns(normalized, NUMERIC_FEATURES)
+    notices = []
+    missing_categorical = [
+        column for column in CATEGORICAL_COLUMNS
+        if column not in normalized.columns
+    ]
+    if missing_categorical:
+        notices.append({
+            'type': 'missing',
+            'columns': missing_categorical,
+        })
+
+    cleaned = normalized.copy()
+    for column, default in UPLOAD_CATEGORY_DEFAULTS.items():
+        if column not in cleaned.columns:
+            cleaned[column] = default
+        else:
+            values = cleaned[column]
+            blank = values.isna() | values.astype(str).str.strip().eq('')
+            cleaned.loc[blank, column] = default
+
+    cleaned = _clean_inference_frame(cleaned, medians_path=medians_path)
+    for column, levels in CATEGORICAL_LEVELS.items():
+        values = cleaned[column].fillna(UPLOAD_CATEGORY_DEFAULTS[column])
+        values = values.astype(str).str.strip()
+        lookup = {level.casefold(): level for level in levels}
+        canonical = values.map(
+            lambda value: lookup.get(value.casefold())
+        )
+        unknown_mask = canonical.isna()
+        if unknown_mask.any():
+            unknown_values = values.loc[unknown_mask]
+            fallback = UPLOAD_CATEGORY_DEFAULTS[column]
+            unique_values = list(dict.fromkeys(unknown_values.tolist()))
+            external_identifier_rows = (
+                int(unknown_values.map(
+                    is_supported_string_identifier
+                ).sum())
+                if column == 'string_id' else 0
+            )
+            examples = [
+                re.sub(r'[^A-Za-z0-9._-]', '_', value)[:18]
+                for value in unique_values[:5]
+            ]
+            notices.append({
+                'type': 'unknown',
+                'column': column,
+                'count': int(unknown_mask.sum()),
+                'examples': examples,
+                'remaining': max(0, len(unique_values) - len(examples)),
+                'default': fallback,
+                'external_identifier_rows': external_identifier_rows,
+            })
+            canonical.loc[unknown_mask] = fallback
+        cleaned[column] = canonical
+
+    return encode_categoricals(cleaned), notices
 
 
 if __name__ == '__main__':

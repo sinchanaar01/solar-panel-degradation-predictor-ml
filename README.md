@@ -117,8 +117,12 @@ the dashboard.
 1. Create an account that meets the displayed password policy and log in.
 2. Choose **Predict** for a manual input. Simple mode is the default; advanced
    mode exposes all 15 model features.
-3. For CSV uploads, provide the 12 numeric features and three categorical
-   features. An `id` and `efficiency` target are not required.
+3. For CSV uploads, provide the 12 numeric features; `string_id`, `error_code`,
+   and `installation_type` are optional. An `id` and `efficiency` target are
+   not required. Headers with common unit suffixes or aliases are normalized,
+   and comma-, semicolon-, and tab-delimited files are supported. Blank or
+   unknown category values use documented defaults and produce a notice;
+   arbitrary panel identifiers are retained as `panel_id` in the download.
 4. Review the predicted efficiency, recommendation, age-sweep forecast, global
    feature importances, and any out-of-training-range warning.
 5. Download a single-result PDF/Excel report or a batch predictions CSV from
@@ -157,6 +161,8 @@ five languages and both desktop and 375px viewport filenames.
   a guarantee that field performance changes linearly with age.
 - CSV uploads are limited by the configured request-size limit and required
   feature schema.
+- Unknown categorical values are mapped to the relevant default group, so
+  predictions for those rows rely mainly on the numeric inputs.
 - SQLite and in-memory rate-limit storage are appropriate for a local review
   deployment, not a horizontally scaled production service.
 - The percentile warning signals distribution shift; it is not a calibrated

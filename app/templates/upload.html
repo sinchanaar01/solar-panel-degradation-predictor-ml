@@ -10,9 +10,13 @@
         {{ t('temperature') }}, {{ t('irradiance') }}, {{ t('humidity') }},
         {{ t('panel_age') }}, {{ t('maintenance_count') }}, {{ t('soiling_label') }},
         {{ t('voltage') }}, {{ t('current') }}, {{ t('module_temperature') }},
-        {{ t('cloud_coverage') }}, {{ t('wind_speed') }}, {{ t('pressure') }},
-        {{ t('string_id') }}, {{ t('error_code') }}, {{ t('installation_type') }}.
+        {{ t('cloud_coverage') }}, {{ t('wind_speed') }}, {{ t('pressure') }}.
+        <br><strong>{{ t('upload_categories_optional') }}</strong>
     </p>
+
+    <p><a href="{{ url_for('dataset.download_upload_template') }}">
+        {{ t('download_sample_csv') }}
+    </a></p>
 
     <form method="POST" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

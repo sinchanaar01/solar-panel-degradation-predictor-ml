@@ -16,7 +16,14 @@ from app.utils.maintenance_rules import get_maintenance_recommendation
 from app.utils.report_generator import generate_excel, generate_pdf
 from app.utils.translations import SUPPORTED_LANGS, TRANSLATIONS, t
 from ml.predict import build_input_row, predict_single
-from ml.preprocessing import CATEGORICAL_LEVELS, clean_for_inference
+from ml.preprocessing import (
+    CATEGORICAL_LEVELS,
+    NUMERIC_FEATURES,
+    clean_for_inference,
+    clean_for_upload,
+    is_supported_string_identifier,
+    normalize_columns,
+)
 
 
 @pytest.fixture
@@ -142,6 +149,149 @@ def test_unknown_categories_raise_a_clear_validation_error():
         clean_for_inference(pd.DataFrame([_valid_row(string_id='ZZ')]))
 
 
+def _post_csv(client, csv_data, filename='panels.csv', follow_redirects=False):
+    token = _csrf(client, '/upload')
+    return client.post('/upload', data={
+        'csrf_token': token,
+        'file': (io.BytesIO(csv_data), filename),
+    }, content_type='multipart/form-data', follow_redirects=follow_redirects)
+
+
+def test_normalize_columns_supports_units_aliases_and_spacing():
+    raw = pd.DataFrame(columns=[
+        ' Temperature (°C) ', 'Panel Age', 'Cleanliness Index',
+        'Module Temp', 'Cloud Cover', 'Wind', 'Maintenance Counts',
+    ])
+    normalized = normalize_columns(raw)
+    assert list(normalized.columns) == [
+        'temperature', 'panel_age', 'soiling_ratio', 'module_temperature',
+        'cloud_coverage', 'wind_speed', 'maintenance_count',
+    ]
+
+
+def test_upload_preprocessing_maps_unknown_categories_and_reports_them():
+    row = _valid_row(
+        string_id='STR-001', error_code='unexpected',
+        installation_type='Rooftop',
+    )
+    encoded, notices = clean_for_upload(pd.DataFrame([row]))
+    assert encoded.iloc[0]['string_id_B2'] == 0
+    assert encoded.iloc[0]['string_id_C3'] == 0
+    assert encoded.iloc[0]['string_id_D4'] == 0
+    assert encoded.iloc[0]['error_code_missing'] == 1
+    assert encoded.iloc[0]['installation_type_missing'] == 1
+    assert [(notice['column'], notice['count']) for notice in notices] == [
+        ('string_id', 1), ('error_code', 1), ('installation_type', 1)
+    ]
+
+
+def test_model_and_external_string_id_formats_are_supported():
+    assert all(
+        is_supported_string_identifier(value)
+        for value in ('A1', 'B2', 'C3', 'D4')
+    )
+    assert all(
+        is_supported_string_identifier(f'STR-{number:03}')
+        for number in range(1, 101)
+    )
+    assert not is_supported_string_identifier('STR-000')
+    assert not is_supported_string_identifier('STR-101')
+    assert not is_supported_string_identifier('NOT-A-PANEL')
+
+    rows = [
+        _valid_row(string_id=value)
+        for value in ('A1', 'B2', 'C3', 'D4', 'STR-001', 'STR-100')
+    ]
+    encoded, notices = clean_for_upload(pd.DataFrame(rows))
+    assert list(encoded['string_id_B2']) == [0, 1, 0, 0, 0, 0]
+    assert list(encoded['string_id_C3']) == [0, 0, 1, 0, 0, 0]
+    assert list(encoded['string_id_D4']) == [0, 0, 0, 1, 0, 0]
+    string_notice = next(
+        notice for notice in notices if notice['column'] == 'string_id'
+    )
+    assert string_notice['count'] == 2
+    assert string_notice['external_identifier_rows'] == 2
+
+
+def test_genuinely_invalid_string_ids_use_explicit_baseline_fallback():
+    row = _valid_row(string_id='STR-101')
+    encoded, notices = clean_for_upload(pd.DataFrame([row]))
+    assert not is_supported_string_identifier(row['string_id'])
+    assert encoded.loc[0, [
+        'string_id_B2', 'string_id_C3', 'string_id_D4'
+    ]].tolist() == [0, 0, 0]
+    notice = next(
+        notice for notice in notices if notice['column'] == 'string_id'
+    )
+    assert notice['count'] == 1
+    assert notice['external_identifier_rows'] == 0
+    assert notice['default'] == 'A1'
+
+
+def test_strict_inference_still_reports_allowed_category_values():
+    with pytest.raises(ValueError, match='Allowed values: dual-axis, fixed'):
+        clean_for_inference(pd.DataFrame([
+            _valid_row(installation_type='Rooftop')
+        ]))
+
+
+def test_upload_with_only_numeric_features_uses_optional_defaults(app, client):
+    _authenticate_client(app, client)
+    row = _valid_row()
+    for category in CATEGORICAL_LEVELS:
+        row.pop(category)
+    csv_data = pd.DataFrame([row]).to_csv(index=False).encode()
+    response = _post_csv(client, csv_data, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Optional categorical column(s) absent' in response.data
+    assert b'string_id (A1)' in response.data
+    assert b'error_code (missing)' in response.data
+
+
+def test_semicolon_bom_and_noncanonical_headers_upload(app, client):
+    _authenticate_client(app, client)
+    row = _valid_row()
+    columns = {
+        'Temperature (°C)': 'temperature',
+        'Irradiance': 'irradiance',
+        'Humidity': 'humidity',
+        'Panel Age': 'panel_age',
+        'Maintenance Count': 'maintenance_count',
+        'Cleanliness Index': 'soiling_ratio',
+        'Voltage': 'voltage',
+        'Current': 'current',
+        'Module Temp': 'module_temperature',
+        'Cloud Cover': 'cloud_coverage',
+        'Wind': 'wind_speed',
+        'Pressure': 'pressure',
+    }
+    raw = pd.DataFrame([{header: row[key] for header, key in columns.items()}])
+    csv_data = b'\xef\xbb\xbf' + raw.to_csv(index=False, sep=';').encode('utf-8')
+    response = _post_csv(client, csv_data)
+    assert response.status_code == 302
+    assert '/upload/results/' in response.headers['Location']
+
+
+def test_tab_delimited_upload_is_sniffed(app, client):
+    _authenticate_client(app, client)
+    csv_data = pd.DataFrame([_valid_row()]).to_csv(
+        index=False, sep='\t'
+    ).encode()
+    response = _post_csv(client, csv_data)
+    assert response.status_code == 302
+    assert '/upload/results/' in response.headers['Location']
+
+
+def test_latin1_encoded_csv_upload_uses_fallback(app, client):
+    _authenticate_client(app, client)
+    row = _valid_row()
+    row['panel_id'] = 'panneau-é-1'
+    csv_data = pd.DataFrame([row]).to_csv(index=False).encode('latin-1')
+    response = _post_csv(client, csv_data)
+    assert response.status_code == 302
+    assert '/upload/results/' in response.headers['Location']
+
+
 def test_csv_without_efficiency_uploads_and_downloads_predictions(app, client):
     _authenticate_client(app, client)
     token = _csrf(client, '/upload')
@@ -176,7 +326,132 @@ def test_csv_missing_required_columns_shows_clear_error(app, client):
     }, content_type='multipart/form-data', follow_redirects=True)
     assert response.status_code == 200
     assert b'Missing required column(s)' in response.data
-    assert b'string_id' in response.data
+    assert b'pressure' in response.data
+    assert b'Columns found in your file: temperature' in response.data
+
+
+def test_upload_accepts_case_and_whitespace_normalized_categories(app, client):
+    _authenticate_client(app, client)
+    row = _valid_row(string_id=' A1 ', error_code='e00',
+                     installation_type='Fixed')
+    response = _post_csv(
+        client, pd.DataFrame([row]).to_csv(index=False).encode(),
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b'values the model does not know' not in response.data
+
+
+def test_upload_unknown_category_is_defaulted_with_short_notice(app, client):
+    _authenticate_client(app, client)
+    row = _valid_row(installation_type='xyz')
+    response = _post_csv(
+        client, pd.DataFrame([row]).to_csv(index=False).encode(),
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b'installation_type: 1 rows' in response.data
+    assert b'default group missing' in response.data
+    notice = re.search(
+        rb'<div class="message info">(.*?)</div>', response.data, re.DOTALL
+    )
+    assert notice is not None
+    assert len(notice.group(1)) < 300
+
+
+def test_upload_known_categories_do_not_produce_unknown_notice(app, client):
+    _authenticate_client(app, client)
+    rows = [
+        _valid_row(string_id=string_id, error_code='E00',
+                   installation_type='fixed')
+        for string_id in ('A1', 'B2', 'C3', 'D4')
+    ]
+    response = _post_csv(
+        client, pd.DataFrame(rows).to_csv(index=False).encode(),
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b'values the model does not know' not in response.data
+
+
+def test_arbitrary_string_ids_are_kept_in_predictions_csv(app, client):
+    _authenticate_client(app, client)
+    ids = [f'STR-{index:03}' for index in range(1, 101)]
+    rows = [_valid_row(string_id=value) for value in ids]
+    response = _post_csv(
+        client, pd.DataFrame(rows).to_csv(index=False).encode(),
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    notices = re.findall(
+        rb'<div class="message info">(.*?)</div>', response.data, re.DOTALL
+    )
+    unknown_notice = next(
+        notice for notice in notices if b'string_id: 100 rows' in notice
+    )
+    assert b'STR-001' in unknown_notice
+    assert b'and 95 more' in unknown_notice
+    assert len(unknown_notice) < 300
+
+    with app.app_context():
+        dataset = Dataset.query.one()
+        dataset_id = dataset.id
+    download = client.get(f'/upload/{dataset_id}/download')
+    output = pd.read_csv(io.BytesIO(download.data), dtype={'panel_id': str})
+    assert download.status_code == 200
+    assert len(output) == 100
+    assert output['panel_id'].tolist() == ids
+
+
+def test_upload_unknown_rooftop_installation_is_defaulted_with_notice(app, client):
+    _authenticate_client(app, client)
+    row = _valid_row(installation_type='Rooftop')
+    response = _post_csv(
+        client, pd.DataFrame([row]).to_csv(index=False).encode(),
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b'installation_type: 1 rows' in response.data
+    assert b'Rooftop' in response.data
+    assert b'default group missing' in response.data
+
+
+def test_upload_template_is_login_protected_and_downloadable(app, client):
+    anonymous = client.get('/upload/template')
+    assert anonymous.status_code == 302
+    assert anonymous.headers['Location'].endswith('/login?next=%2Fupload%2Ftemplate')
+
+    _authenticate_client(app, client)
+    response = client.get('/upload/template')
+    assert response.status_code == 200
+    assert response.headers['Content-Disposition'].endswith(
+        'filename=sample_upload.csv'
+    )
+    sample = pd.read_csv(io.BytesIO(response.data))
+    assert list(sample.columns) == [
+        *NUMERIC_FEATURES, 'string_id', 'error_code', 'installation_type'
+    ]
+    assert len(sample) == 5
+
+
+def test_training_dataset_csv_uploads_successfully(app, client):
+    _authenticate_client(app, client)
+    root = Path(__file__).resolve().parents[1]
+    csv_data = (root / 'data' / 'train.csv').read_bytes()
+    response = _post_csv(
+        client, csv_data, filename='train.csv', follow_redirects=False
+    )
+    assert response.status_code == 302
+    assert '/upload/results/' in response.headers['Location']
+
+
+def test_single_panel_form_rejects_invalid_string_id(app, client):
+    _authenticate_client(app, client)
+    row = _valid_row(string_id='STR-001')
+    row.update({'csrf_token': _csrf(client, '/predict'), 'mode': 'advanced'})
+    response = client.post('/predict', data=row)
+    assert response.status_code == 200
+    assert b'String ID: choose a valid option.' in response.data
 
 
 def test_maintenance_rule_uses_cleanliness_index():

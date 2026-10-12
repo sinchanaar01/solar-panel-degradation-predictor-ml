@@ -42,5 +42,34 @@
             {{ t('download_predictions') }}
         </a>
     </div>
+
+    {% if preview_rows %}
+    <section style="margin-top:28px; text-align:left;">
+        <h3>{{ t('upload_preview_title') }}</h3>
+        <p>{{ t('upload_preview_first_rows', count=preview_rows|length) }}</p>
+        <div class="table-scroll" role="region" tabindex="0"
+             aria-label="{{ t('upload_preview_title') }}">
+            <table>
+                <thead>
+                    <tr>{% for column in preview_columns %}
+                        <th>
+                            {% if column == 'panel_id' %}{{ t('panel_id') }}
+                            {% elif column == 'predicted_efficiency' %}{{ t('predicted_efficiency') }}
+                            {% elif column == 'recommendation' %}{{ t('recommendation') }}
+                            {% else %}{{ column }}{% endif %}
+                        </th>
+                    {% endfor %}</tr>
+                </thead>
+                <tbody>
+                    {% for row in preview_rows %}
+                    <tr>{% for column in preview_columns %}
+                        <td>{{ row[column] }}</td>
+                    {% endfor %}</tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
 </div>
 {% endblock %}
