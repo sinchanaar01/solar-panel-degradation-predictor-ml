@@ -2,11 +2,11 @@
 {% block title %}{{ t('upload_result') }} — {{ t('app_name') }}{% endblock %}
 
 {% block content %}
-<div class="container" style="max-width: 700px; text-align:center;">
+<div class="container batch-container">
     <h2>{{ t('batch_complete') }}</h2>
 
     {% if dataset %}
-    <p style="color:#666; margin:16px 0; font-size:14px;">
+    <p class="batch-file-name">
         {{ t('file_name') }}: <strong>{{ dataset.filename }}</strong> &mdash;
         {{ t('rows_processed', count=dataset.rows_count) }}
     </p>
@@ -18,20 +18,20 @@
 
     <div class="batch-metrics">
         <div class="batch-metric-card">
-            <div style="font-size:28px; font-weight:bold; color:#3366cc;">{{ "%.3f"|format(dataset.mean_eff) }}</div>
-            <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('mean_efficiency') }}</div>
+            <div class="batch-metric-value mean">{{ "%.3f"|format(dataset.mean_eff) }}</div>
+            <div class="batch-metric-label">{{ t('mean_efficiency') }}</div>
         </div>
         <div class="batch-metric-card">
-            <div style="font-size:28px; font-weight:bold; color:#2e7d32;">{{ "%.3f"|format(dataset.max_eff) }}</div>
-            <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('best_panel') }}</div>
+            <div class="batch-metric-value best">{{ "%.3f"|format(dataset.max_eff) }}</div>
+            <div class="batch-metric-label">{{ t('best_panel') }}</div>
         </div>
         <div class="batch-metric-card">
-            <div style="font-size:28px; font-weight:bold; color:#e65100;">{{ "%.3f"|format(dataset.min_eff) }}</div>
-            <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('worst_panel') }}</div>
+            <div class="batch-metric-value worst">{{ "%.3f"|format(dataset.min_eff) }}</div>
+            <div class="batch-metric-label">{{ t('worst_panel') }}</div>
         </div>
         <div class="batch-metric-card">
-            <div style="font-size:28px; font-weight:bold; color:#c62828;">{{ dataset.count_critical }}</div>
-            <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('critical_panels') }}</div>
+            <div class="batch-metric-value critical">{{ dataset.count_critical }}</div>
+            <div class="batch-metric-label">{{ t('critical_panels') }}</div>
         </div>
     </div>
 
@@ -131,7 +131,7 @@ new Chart(document.getElementById('actualScatter'), {
                 backgroundColor: '#354a9b'
             },
             {
-                label: 'y=x',
+                label: {{ t('upload_identity_line') | tojson }},
                 data: [{x: chartMin, y: chartMin}, {x: chartMax, y: chartMax}],
                 type: 'line',
                 showLine: true,

@@ -2,9 +2,9 @@
 {% block title %}{{ t('upload_title') }} — {{ t('app_name') }}{% endblock %}
 
 {% block content %}
-<div class="container" style="max-width: 600px;">
+<div class="container upload-container">
     <h2>{{ t('upload_title') }}</h2>
-    <p style="color:#666; margin-bottom:24px; font-size:14px;">
+    <p class="upload-description">
         {{ t('upload_description') }}
         <br><strong>{{ t('required_columns_label') }}:</strong>
         {{ t('temperature') }}, {{ t('irradiance') }}, {{ t('humidity') }},
@@ -14,24 +14,26 @@
         <br><strong>{{ t('upload_categories_optional') }}</strong>
     </p>
 
-    <p><a href="{{ url_for('dataset.download_upload_template') }}">
-        {{ t('download_sample_csv') }}
-    </a></p>
-    <p><a href="{{ url_for('dataset.download_holdout_sample') }}">
-        {{ t('upload_holdout_sample') }}
-    </a></p>
+    <div class="upload-downloads">
+        <a href="{{ url_for('dataset.download_upload_template') }}">
+            {{ t('download_sample_csv') }}
+        </a>
+        <a href="{{ url_for('dataset.download_holdout_sample') }}">
+            {{ t('upload_holdout_sample') }}
+        </a>
+    </div>
 
     <form method="POST" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
             <label for="file">{{ t('file_label') }}:</label>
-            <input type="file" id="file" name="file" accept=".csv" required
-                   style="width:100%;padding:10px;border:1px dashed #aaa;border-radius:4px;background:#fafafa;cursor:pointer;">
+            <input class="upload-file" type="file" id="file" name="file"
+                   accept=".csv" required>
         </div>
         <button type="submit">{{ t('upload_predict') }}</button>
     </form>
 
-    <div class="footer-link" style="margin-top:16px;">
+    <div class="footer-link upload-single-link">
         <a href="{{ url_for('predict.predict') }}">{{ t('single_row_link') }}</a>
     </div>
 </div>

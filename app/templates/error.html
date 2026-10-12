@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ t('error_title') }} — {{ t('app_name') }}{% endblock %}
 {% block content %}
-<div class="container" style="text-align:center;">
+<div class="container error-container">
     <h2>{{ status_code }}</h2>
     <p role="alert">{{ message }}</p>
     <a href="{{ url_for('index') }}">{{ t('go_home') }}</a>

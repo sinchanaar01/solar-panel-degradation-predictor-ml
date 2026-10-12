@@ -2,38 +2,37 @@
 {% block title %}{{ t('prediction_history') }} — {{ t('app_name') }}{% endblock %}
 
 {% block content %}
-<div class="container" style="max-width: 900px;">
+<div class="container history-container">
     <h2>{{ t('prediction_history') }}</h2>
-    <p style="color:#666; font-size:14px; margin-bottom:20px;">
+    <p class="history-intro">
         {{ t('history_intro') }}
     </p>
 
     {% if predictions %}
-    <p class="muted" style="font-size:13px; margin-bottom:8px;">{{ t('table_scroll_hint') }}</p>
+    <p class="muted table-scroll-hint">{{ t('table_scroll_hint') }}</p>
     <div class="table-scroll" tabindex="0" role="region" aria-label="{{ t('prediction_history') }}">
-    <table style="width:100%; min-width:680px; border-collapse:collapse; font-size:14px;">
+    <table class="history-table">
         <thead>
-            <tr style="background:#f5f5f5; text-align:left;">
-                <th style="padding:10px 12px;">#</th>
-                <th style="padding:10px 12px;">{{ t('result_date') }}</th>
-                <th style="padding:10px 12px;">{{ t('efficiency') }}</th>
-                <th style="padding:10px 12px;">{{ t('recommendation') }}</th>
-                <th style="padding:10px 12px;">{{ t('actions') }}</th>
+            <tr>
+                <th scope="col">#</th>
+                <th scope="col">{{ t('result_date') }}</th>
+                <th scope="col">{{ t('efficiency') }}</th>
+                <th scope="col">{{ t('recommendation') }}</th>
+                <th scope="col">{{ t('actions') }}</th>
             </tr>
         </thead>
         <tbody>
         {% for p in predictions %}
-            <tr style="border-bottom:1px solid #eee;">
-                <td style="padding:10px 12px; color:#595959;">{{ p.id }}</td>
-                <td style="padding:10px 12px;">{{ p.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                <td style="padding:10px 12px; font-weight:600;
-                    color: {% if p.predicted_efficiency < 0.40 %}#c62828{% elif p.predicted_efficiency < 0.55 %}#e65100{% else %}#2e7d32{% endif %};">
+            <tr>
+                <td class="history-id">{{ p.id }}</td>
+                <td>{{ p.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td class="history-efficiency {{ 'urgent' if p.predicted_efficiency < 0.40 else 'watch' if p.predicted_efficiency < 0.55 else 'good' }}">
                     {{ "%.4f"|format(p.predicted_efficiency) }}
                 </td>
-                <td style="padding:10px 12px; font-size:13px;">{{ t(recommendation_keys[p.id]) }}</td>
-                <td style="padding:10px 12px;">
+                <td>{{ t(recommendation_keys[p.id]) }}</td>
+                <td>
                     <a href="{{ url_for('predict.results', result_id=p.id) }}"
-                       style="color:#667eea; text-decoration:none; font-size:13px;">{{ t('view') }}</a>
+                       class="history-view-link">{{ t('view') }}</a>
                 </td>
             </tr>
         {% endfor %}
@@ -41,12 +40,12 @@
     </table>
     </div>
     {% else %}
-    <p class="muted" style="text-align:center; padding:40px 0;">
+    <p class="empty-state">
         {{ t('no_predictions') }} <a href="{{ url_for('predict.predict') }}">{{ t('new_prediction') }}</a>
     </p>
     {% endif %}
 
-    <div style="margin-top:20px;">
+    <div class="history-actions">
         <a class="action-link" href="{{ url_for('predict.predict') }}">
             {{ t('new_prediction') }}
         </a>

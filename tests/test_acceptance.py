@@ -836,9 +836,53 @@ def test_prediction_ui_is_labeled_responsive_and_disables_on_submit(app, client)
             rf'<label\b[^>]*\bfor="{re.escape(input_id.group(1))}"',
             html,
         ), input_tag
-    assert '@media (max-width:600px)' in html
-    assert 'min-height: 44px' in html
-    assert ':focus-visible' in html
+    css_response = client.get('/static/css/app.css')
+    css = css_response.data.decode('utf-8')
+    assert css_response.status_code == 200
+    assert '@media (max-width: 700px)' in css
+    assert 'min-height: 44px' in css
+    assert ':focus-visible' in css
+
+
+def test_password_visibility_controls_are_present_and_localized(client):
+    for lang in SUPPORTED_LANGS:
+        with client.session_transaction() as session:
+            session['lang'] = lang
+        for path in ('/login', '/register'):
+            response = client.get(path)
+            assert response.status_code == 200
+            html = response.data.decode('utf-8')
+            assert 'data-password-toggle' in html
+            assert t('show_password', lang=lang) in html
+            assert t('hide_password', lang=lang) in html
+            assert 'style=' not in html
+
+
+def test_all_pages_use_external_css_and_label_visible_inputs(app, client):
+    pages = [client.get('/login'), client.get('/register')]
+    user_id = _authenticate_client(app, client, 'css-a11y-owner')
+    pages.extend(
+        client.get(path)
+        for path in ('/dashboard', '/predict', '/upload', '/history')
+    )
+    result_id = _create_prediction(app, user_id)
+    pages.append(client.get(f'/results/{result_id}'))
+    pages.append(client.get('/route-does-not-exist'))
+
+    for page in pages:
+        html = page.data.decode('utf-8')
+        assert page.status_code in (200, 404)
+        assert '/static/css/app.css' in html
+        assert re.search(r'\bstyle\s*=', html) is None
+        for input_tag in re.findall(r'<input\b[^>]*>', html):
+            if re.search(r'\btype="hidden"', input_tag):
+                continue
+            input_id = re.search(r'\bid="([^"]+)"', input_tag)
+            assert input_id is not None, input_tag
+            assert re.search(
+                rf'<label\b[^>]*\bfor="{re.escape(input_id.group(1))}"',
+                html,
+            ), input_tag
 
 
 def test_dashboard_and_history_have_translated_empty_states(app, client):
@@ -881,7 +925,9 @@ def test_history_table_uses_a_keyboard_scroll_region(app, client):
     _create_prediction(app, user_id)
     page = client.get('/history')
     assert b'class="table-scroll" tabindex="0" role="region"' in page.data
-    assert b'min-width:680px' in page.data
+    css = client.get('/static/css/app.css').data
+    assert b'.history-table { width: 100%; min-width: 680px' in css
+    assert b'.table-scroll { max-width: 100%; overflow-x: auto' in css
 
 
 def test_external_next_url_does_not_redirect_off_site(app, client):

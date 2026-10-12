@@ -422,6 +422,36 @@ TRANSLATIONS['upload_unknown_defaults_notice']['kn'] = (
     '(ಉದಾಹರಣೆಗಳು: {examples}). ಅವುಗಳನ್ನು ಡೀಫಾಲ್ಟ್ ಗುಂಪು {default} '
     'ಎಂದು ಪರಿಗಣಿಸಲಾಗಿದೆ.'
 )
+TRANSLATIONS.update({
+    'navigation': {
+        'en': 'Main navigation',
+        'kn': 'ಮುಖ್ಯ ನ್ಯಾವಿಗೇಶನ್',
+        'hi': 'मुख्य नेविगेशन',
+        'te': 'ప్రధాన నావిగేషన్',
+        'ta': 'முதன்மை வழிசெலுத்தல்',
+    },
+    'show_password': {
+        'en': 'Show',
+        'kn': 'ತೋರಿಸಿ',
+        'hi': 'दिखाएँ',
+        'te': 'చూపించు',
+        'ta': 'காட்டு',
+    },
+    'hide_password': {
+        'en': 'Hide',
+        'kn': 'ಮರೆಮಾಡಿ',
+        'hi': 'छिपाएँ',
+        'te': 'దాచు',
+        'ta': 'மறை',
+    },
+    'upload_identity_line': {
+        'en': 'Perfect agreement',
+        'kn': 'ಪೂರ್ಣ ಹೊಂದಾಣಿಕೆ',
+        'hi': 'पूरा मेल',
+        'te': 'పూర్తి సరిపోలిక',
+        'ta': 'முழுப் பொருத்தம்',
+    },
+})
 
 
 def t(key, lang=None, **fmt):
