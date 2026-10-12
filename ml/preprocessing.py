@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from functools import lru_cache
+from difflib import SequenceMatcher
 import hashlib
 import re
 
@@ -36,6 +37,11 @@ _EXTERNAL_STRING_ID_PATTERN = re.compile(
     r'STR-(?:00[1-9]|0[1-9][0-9]|100)', re.IGNORECASE
 )
 COLUMN_ALIASES = {
+    'temp': 'temperature',
+    'solar_irradiance': 'irradiance',
+    'humidity_pct': 'humidity',
+    'relative_humidity': 'humidity',
+    'panel_age_years': 'panel_age',
     'soiling': 'soiling_ratio',
     'cleanliness': 'soiling_ratio',
     'cleanliness_index': 'soiling_ratio',
@@ -50,6 +56,16 @@ COLUMN_ALIASES = {
     'installation': 'installation_type',
     'error': 'error_code',
 }
+_FUZZY_HEADER_TARGETS = (
+    *NUMERIC_FEATURES, *CATEGORICAL_COLUMNS, 'efficiency',
+    'panel_id', 'panel', 'id',
+)
+_CATEGORICAL_DUMMY_HEADERS = {
+    f'{column}_{level}'.casefold()
+    for column, levels in CATEGORICAL_LEVELS.items()
+    for level in levels[1:]
+}
+_FUZZY_HEADER_THRESHOLD = 0.84
 MODEL_DIR = Path(__file__).resolve().parent.parent / 'models'
 
 
@@ -106,15 +122,45 @@ def is_supported_string_identifier(value):
     )
 
 
-def normalize_columns(df):
-    """Normalize common CSV header styles and known feature aliases."""
+def normalize_columns(df, *, return_mappings=False):
+    """Normalize headers and return any unambiguous fuzzy feature matches."""
     normalized = []
+    mappings = []
     for column in df.columns:
+        source_name = str(column).strip()
         name = str(column).strip().lower()
         name = re.sub(r'\s*\([^)]*\)\s*$', '', name)
         name = re.sub(r'[\s-]+', '_', name)
         name = re.sub(r'_+', '_', name).strip('_')
-        normalized.append(COLUMN_ALIASES.get(name, name))
+        canonical = COLUMN_ALIASES.get(name, name)
+        if (
+            canonical == name
+            and name not in _FUZZY_HEADER_TARGETS
+            and name not in _CATEGORICAL_DUMMY_HEADERS
+        ):
+            scores = sorted(
+                (
+                    SequenceMatcher(None, name, candidate).ratio(),
+                    candidate,
+                )
+                for candidate in _FUZZY_HEADER_TARGETS
+            )
+            best_score, best_match = scores[-1]
+            second_score = max(
+                (score for score, candidate in scores
+                 if candidate != best_match),
+                default=0.0,
+            )
+            if (
+                best_score >= _FUZZY_HEADER_THRESHOLD
+                and best_score - second_score >= 0.08
+            ):
+                canonical = best_match
+                mappings.append({
+                    'source': source_name[:80],
+                    'target': canonical,
+                })
+        normalized.append(canonical)
 
     duplicate_names = sorted({
         name for name in normalized if normalized.count(name) > 1
@@ -123,6 +169,8 @@ def normalize_columns(df):
         raise ValueError('duplicate_columns')
     result = df.copy()
     result.columns = normalized
+    if return_mappings:
+        return result, mappings
     return result
 
 
@@ -239,11 +287,35 @@ def clean_for_inference(df, medians_path=None):
 
 
 def clean_for_upload(df, medians_path=None):
-    """Prepare batch inputs with optional categories and bounded notices."""
-    normalized = normalize_columns(df)
-    _check_required_columns(normalized, NUMERIC_FEATURES)
+    """Prepare partial batch inputs with training medians and bounded notices."""
+    normalized, fuzzy_mappings = normalize_columns(
+        df, return_mappings=True
+    )
+    observed_numeric = [
+        column for column in NUMERIC_FEATURES
+        if column in normalized.columns
+    ]
+    if not observed_numeric:
+        raise MissingColumnsError(NUMERIC_FEATURES, normalized.columns)
+    missing_numeric = [
+        column for column in NUMERIC_FEATURES
+        if column not in normalized.columns
+    ]
     notices = []
+    if fuzzy_mappings:
+        notices.append({
+            'type': 'fuzzy_columns',
+            'count': len(fuzzy_mappings),
+            'mappings': fuzzy_mappings,
+        })
+    if missing_numeric:
+        notices.append({
+            'type': 'numeric_defaults',
+            'columns': missing_numeric,
+        })
     cleaned = normalized.copy()
+    for column in missing_numeric:
+        cleaned[column] = np.nan
     dummy_rebuilt = {}
     has_encoded_categories = any(
         f'{column}_{level}'.casefold() in cleaned.columns

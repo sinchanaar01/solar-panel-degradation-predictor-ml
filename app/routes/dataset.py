@@ -90,6 +90,24 @@ def _panel_identifiers(normalized_rows):
 
 
 def _render_upload_notice(notice):
+    if notice['type'] == 'fuzzy_columns':
+        mappings = [
+            f"{item['source'][:18]} → {item['target']}"
+            for item in notice['mappings'][:5]
+        ]
+        remaining = notice['count'] - len(mappings)
+        if remaining:
+            mappings.append(t('and_more_count', count=remaining))
+        return _short_message(t(
+            'upload_fuzzy_columns_notice',
+            count=notice['count'],
+            columns=', '.join(mappings),
+        ))
+    if notice['type'] == 'numeric_defaults':
+        columns = ', '.join(notice['columns'])
+        return _short_message(t(
+            'upload_numeric_defaults_notice', columns=columns
+        ))
     if notice['type'] == 'missing':
         columns = ', '.join(
             f"{column} ({UPLOAD_CATEGORY_DEFAULTS[column]})"
@@ -218,7 +236,7 @@ def upload():
         if len(raw_rows) > MAX_UPLOAD_ROWS:
             raise ValueError('too_many_rows')
         normalized_rows = normalize_columns(raw_rows)
-        cleaned, notices = clean_for_upload(normalized_rows)
+        cleaned, notices = clean_for_upload(raw_rows)
         project_root = Path(current_app.root_path).parent
         model_path = project_root / 'models' / 'best_model.joblib'
         data_path = project_root / 'data' / 'train_cleaned.csv'
@@ -294,16 +312,25 @@ def upload():
     except MissingColumnsError as exc:
         db.session.rollback()
         current_app.logger.info('CSV upload is missing numeric columns: %s', exc.missing)
-        missing = _short_values(exc.missing, maximum=180)
         found_values = list(exc.found[:20])
         if len(exc.found) > 20:
             found_values.append('...')
-        found = _short_values(found_values, maximum=80)
-        flash(_short_message(t(
-            'missing_required_columns',
-            columns=missing,
-            found=found or t('none_found'),
-        )), 'error')
+        if not any(column in exc.found for column in NUMERIC_FEATURES):
+            found = _short_values(found_values, maximum=45)
+            message = t(
+                'upload_no_numeric_feature',
+                columns=', '.join(NUMERIC_FEATURES),
+                found=found or t('none_found'),
+            )
+        else:
+            missing = _short_values(exc.missing, maximum=180)
+            found = _short_values(found_values, maximum=80)
+            message = t(
+                'missing_required_columns',
+                columns=missing,
+                found=found or t('none_found'),
+            )
+        flash(_short_message(message), 'error')
         return redirect(url_for('dataset.upload'))
     except (ValueError, FileNotFoundError, pd.errors.ParserError,
             pd.errors.EmptyDataError, UnicodeDecodeError) as exc:
@@ -314,6 +341,8 @@ def upload():
             message = t('empty_csv_error')
         elif str(exc) == 'too_many_rows':
             message = t('upload_too_many_rows', count=len(raw_rows))
+        elif str(exc) == 'duplicate_columns':
+            message = t('duplicate_upload_columns')
         flash(_short_message(message), 'error')
         return redirect(url_for('dataset.upload'))
     except Exception:

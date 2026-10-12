@@ -17,6 +17,7 @@ from app.routes import dataset as dataset_routes
 from app.utils.maintenance_rules import get_maintenance_recommendation
 from app.utils.report_generator import generate_excel, generate_pdf
 from app.utils.translations import SUPPORTED_LANGS, TRANSLATIONS, t
+from ml.artifacts import load_artifacts
 from ml.predict import build_input_row, predict_single
 from ml.preprocessing import (
     CATEGORICAL_LEVELS,
@@ -171,6 +172,104 @@ def test_normalize_columns_supports_units_aliases_and_spacing():
     ]
 
 
+def test_normalize_columns_fuzzy_matches_only_unambiguous_feature_headers():
+    raw = pd.DataFrame(columns=[
+        'Temperatur', 'Irradience', 'Module Temprature',
+        'unrelated_note',
+    ])
+    normalized, mappings = normalize_columns(raw, return_mappings=True)
+    assert list(normalized.columns) == [
+        'temperature', 'irradiance', 'module_temperature', 'unrelated_note',
+    ]
+    assert [(item['source'], item['target']) for item in mappings] == [
+        ('Temperatur', 'temperature'),
+        ('Irradience', 'irradiance'),
+        ('Module Temprature', 'module_temperature'),
+    ]
+
+
+def test_upload_preprocessing_accepts_one_numeric_feature_and_fills_medians():
+    encoded, notices = clean_for_upload(pd.DataFrame({
+        'temperature': [35],
+        'installation_type': ['Fixed'],
+    }))
+    assert encoded.loc[0, 'temperature'] == 35
+    assert encoded.loc[0, list(NUMERIC_FEATURES)].notna().all()
+    training_medians = load_artifacts()['training_medians']
+    for feature in NUMERIC_FEATURES:
+        if feature != 'temperature':
+            assert encoded.loc[0, feature] == pytest.approx(
+                training_medians[feature]
+            )
+    missing_notice = next(
+        notice for notice in notices if notice['type'] == 'numeric_defaults'
+    )
+    assert len(missing_notice['columns']) == len(NUMERIC_FEATURES) - 1
+
+
+def test_partial_fuzzy_upload_succeeds_with_translated_notices(app, client):
+    _authenticate_client(app, client)
+    with client.session_transaction() as session:
+        session['lang'] = 'te'
+    response = _post_csv(
+        client,
+        pd.DataFrame({
+            'Temperatur': [35],
+            'Irradience': [600],
+            'installation_type': ['Fixed'],
+            'panel_id': ['manual-1'],
+        }).to_csv(index=False).encode(),
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert t(
+        'upload_fuzzy_columns_notice',
+        lang='te',
+        count=2,
+        columns='Temperatur → temperature, Irradience → irradiance',
+    ).encode() in response.data
+    missing_numeric = ', '.join(
+        column for column in NUMERIC_FEATURES
+        if column not in {'temperature', 'irradiance'}
+    )
+    assert t(
+        'upload_numeric_defaults_notice',
+        lang='te',
+        columns=missing_numeric,
+    ).encode() in response.data
+    assert b'manual-1' in response.data
+
+
+def test_upload_with_no_numeric_feature_has_friendly_missing_columns_error(
+        app, client):
+    _authenticate_client(app, client)
+    response = _post_csv(
+        client,
+        pd.DataFrame({'panel_id': ['P-1'], 'note': ['no sensor data']})
+        .to_csv(index=False).encode(),
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b'No numeric feature found' in response.data
+    assert b'temperature' in response.data
+    assert b'Columns found in your file:' in response.data
+    assert b'Traceback' not in response.data
+
+
+def test_fuzzy_duplicate_feature_headers_show_clear_error(app, client):
+    _authenticate_client(app, client)
+    response = _post_csv(
+        client,
+        pd.DataFrame({
+            'temperature': [25],
+            'temperatur': [26],
+        }).to_csv(index=False).encode(),
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b'columns match the same feature' in response.data
+
+
 def test_upload_preprocessing_maps_unknown_categories_and_reports_them():
     row = _valid_row(
         string_id='STR-001', error_code='unexpected',
@@ -321,15 +420,15 @@ def test_csv_without_efficiency_uploads_and_downloads_predictions(app, client):
 def test_csv_missing_required_columns_shows_clear_error(app, client):
     _authenticate_client(app, client)
     token = _csrf(client, '/upload')
-    csv_data = b'temperature\n25\n'
+    csv_data = b'panel_id\nP-1\n'
     response = client.post('/upload', data={
         'csrf_token': token,
         'file': (io.BytesIO(csv_data), 'incomplete.csv'),
     }, content_type='multipart/form-data', follow_redirects=True)
     assert response.status_code == 200
-    assert b'Missing required column(s)' in response.data
+    assert b'No numeric feature found' in response.data
     assert b'pressure' in response.data
-    assert b'Columns found in your file: temperature' in response.data
+    assert b'Columns found in your file: panel_id' in response.data
 
 
 def test_preencoded_upload_rebuilds_categorical_text_and_ignores_id():
@@ -350,7 +449,7 @@ def test_preencoded_upload_rebuilds_categorical_text_and_ignores_id():
 
 def test_missing_column_error_is_bounded_with_first_twenty_found(app, client):
     _authenticate_client(app, client)
-    row = {'pressure': 1013}
+    row = {'panel_id': 'P-1'}
     row.update({f'extra_{number}': number for number in range(30)})
     response = _post_csv(
         client, pd.DataFrame([row]).to_csv(index=False).encode(),
@@ -360,7 +459,7 @@ def test_missing_column_error_is_bounded_with_first_twenty_found(app, client):
         rb'<div class="message error">(.*?)</div>', response.data, re.DOTALL
     ).group(1)
     assert b'Columns found in your file:' in message
-    assert b'extra_5' in message
+    assert b'extra_2' in message
     assert b'...' in message
     assert len(message) < 300
 
