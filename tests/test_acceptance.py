@@ -361,9 +361,16 @@ def test_deployment_manifests_and_ignore_rules_are_present():
     assert (root / '.python-version').read_text().strip() == '3.11'
     procfile = (root / 'Procfile').read_text()
     assert (
-        'gunicorn --workers 2 --bind 0.0.0.0:$PORT '
+        'gunicorn --workers 1 --threads 2 --timeout 120 '
+        '--bind 0.0.0.0:$PORT '
         '"app.app:create_app(\'production\')"'
     ) in procfile
+    dockerfile = (root / 'Dockerfile').read_text()
+    assert (
+        'CMD ["gunicorn", "--workers", "1", "--threads", "2", '
+        '"--timeout", "120", "--bind", "0.0.0.0:8000", '
+        '"app.app:create_app(\'production\')"]'
+    ) in dockerfile
     ignored = (root / '.gitignore').read_text()
     assert '*.db' in ignored
 

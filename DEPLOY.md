@@ -13,10 +13,12 @@
 3. Set the start command to:
 
    ```sh
-   gunicorn --workers 2 --bind 0.0.0.0:$PORT "app.app:create_app('production')"
+   gunicorn --workers 1 --threads 2 --timeout 120 --bind 0.0.0.0:$PORT "app.app:create_app('production')"
    ```
 
    The included `Procfile` has this same command.
+   One worker keeps Flask-Limiter's in-memory rate-limit counters consistent
+   across requests; multiple workers would maintain separate counters.
 4. Add these environment variables in Render:
    - `SECRET_KEY`: generate a unique value with
      `python -c "import secrets; print(secrets.token_hex(32))"`.

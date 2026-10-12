@@ -67,7 +67,7 @@ Use Python 3.11 for the pinned dependency versions.
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 ```
 
@@ -94,6 +94,13 @@ available):
 python -m ml.preprocessing
 python -m ml.train_model
 python -m ml.evaluate_model
+```
+
+Training and evaluation use optional plotting packages. Install them separately
+when regenerating model artifacts:
+
+```powershell
+python -m pip install -r requirements-train.txt
 ```
 
 Start the application:
@@ -126,42 +133,19 @@ inspection.
 
 ## Screenshots
 
-Capture the pages below yourself at desktop and 375px widths. The generated
-images will live in [`docs/screenshots/`](docs/screenshots/); exact filenames
-are listed in [the screenshot checklist](docs/screenshots/README.md):
+Capture these six desktop-width screenshots yourself:
 
-- Login: [desktop](docs/screenshots/login-en-desktop.png),
-  [375px](docs/screenshots/login-en-375px.png)
-- Predict in English: [desktop](docs/screenshots/predict-en-desktop.png),
-  [375px](docs/screenshots/predict-en-375px.png)
-- Predict in Kannada: [desktop](docs/screenshots/predict-kn-desktop.png),
-  [375px](docs/screenshots/predict-kn-375px.png)
-- Predict in Hindi: [desktop](docs/screenshots/predict-hi-desktop.png),
-  [375px](docs/screenshots/predict-hi-375px.png)
-- Predict in Telugu: [desktop](docs/screenshots/predict-te-desktop.png),
-  [375px](docs/screenshots/predict-te-375px.png)
-- Predict in Tamil: [desktop](docs/screenshots/predict-ta-desktop.png),
-  [375px](docs/screenshots/predict-ta-375px.png)
-- Results in English: [desktop](docs/screenshots/results-en-desktop.png),
-  [375px](docs/screenshots/results-en-375px.png)
-- Results in Kannada: [desktop](docs/screenshots/results-kn-desktop.png),
-  [375px](docs/screenshots/results-kn-375px.png)
-- Results in Hindi: [desktop](docs/screenshots/results-hi-desktop.png),
-  [375px](docs/screenshots/results-hi-375px.png)
-- Results in Telugu: [desktop](docs/screenshots/results-te-desktop.png),
-  [375px](docs/screenshots/results-te-375px.png)
-- Results in Tamil: [desktop](docs/screenshots/results-ta-desktop.png),
-  [375px](docs/screenshots/results-ta-375px.png)
-- History in English: [desktop](docs/screenshots/history-en-desktop.png),
-  [375px](docs/screenshots/history-en-375px.png)
-- History in Kannada: [desktop](docs/screenshots/history-kn-desktop.png),
-  [375px](docs/screenshots/history-kn-375px.png)
-- History in Hindi: [desktop](docs/screenshots/history-hi-desktop.png),
-  [375px](docs/screenshots/history-hi-375px.png)
-- History in Telugu: [desktop](docs/screenshots/history-te-desktop.png),
-  [375px](docs/screenshots/history-te-375px.png)
-- History in Tamil: [desktop](docs/screenshots/history-ta-desktop.png),
-  [375px](docs/screenshots/history-ta-375px.png)
+| Page | Screenshot |
+|---|---|
+| Login (English) | [login-en-desktop.png](docs/screenshots/login-en-desktop.png) |
+| Predict (English) | [predict-en-desktop.png](docs/screenshots/predict-en-desktop.png) |
+| Predict (Kannada) | [predict-kn-desktop.png](docs/screenshots/predict-kn-desktop.png) |
+| Results (English) | [results-en-desktop.png](docs/screenshots/results-en-desktop.png) |
+| Results (Tamil) | [results-ta-desktop.png](docs/screenshots/results-ta-desktop.png) |
+| History (English) | [history-en-desktop.png](docs/screenshots/history-en-desktop.png) |
+
+The [complete screenshot checklist](docs/screenshots/README.md) includes all
+five languages and both desktop and 375px viewport filenames.
 
 ## Limitations
 
@@ -185,7 +169,7 @@ are listed in [the screenshot checklist](docs/screenshots/README.md):
 Run the acceptance suite with:
 
 ```powershell
-python -m pip install pytest
+python -m pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 

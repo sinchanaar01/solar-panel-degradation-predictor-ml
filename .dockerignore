@@ -12,5 +12,4 @@ uploads
 outputs
 notebooks
 tests
-solar-panel-degradation-predictor-main
 *.db

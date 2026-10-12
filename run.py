@@ -6,7 +6,7 @@ Usage:
     python run.py
 
 For production, use a production WSGI server:
-    gunicorn -w 4 -b 0.0.0.0:5000 "app.app:create_app('production')"
+    gunicorn --workers 1 --threads 2 --timeout 120 --bind 0.0.0.0:$PORT "app.app:create_app('production')"
 """
 
 import os
