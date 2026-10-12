@@ -20,6 +20,7 @@ from app.routes.auth import auth_bp
 from app.routes.dataset import dataset_bp
 from app.routes.predict import predict_bp
 from app.utils.translations import SUPPORTED_LANGS, t
+from ml.preprocessing import get_training_feature_hashes
 
 
 def create_app(config_name='production'):
@@ -87,6 +88,7 @@ def create_app(config_name='production'):
     uploads_dir = Path(app.config['UPLOAD_FOLDER']).resolve()
     app.config['UPLOAD_FOLDER'] = uploads_dir
     uploads_dir.mkdir(parents=True, exist_ok=True)
+    app.config['TRAINING_FEATURE_HASHES'] = get_training_feature_hashes()
 
     # Register blueprints
     # Each blueprint groups related routes; prefix kept empty so URLs stay clean
@@ -125,6 +127,26 @@ def create_app(config_name='production'):
     # Create database tables
     with app.app_context():
         db.create_all()
+        from sqlalchemy import inspect, text
+        dataset_columns = {
+            column['name'] for column in inspect(db.engine).get_columns('datasets')
+        }
+        dataset_migrations = {
+            'actual_mae': 'FLOAT',
+            'actual_rmse': 'FLOAT',
+            'actual_r2': 'FLOAT',
+            'actual_ignored': 'INTEGER',
+            'has_actual_efficiency': 'BOOLEAN NOT NULL DEFAULT 0',
+            'upload_notices': 'TEXT',
+            'overlap_percentage': 'FLOAT',
+            'scatter_data': 'TEXT',
+        }
+        for column, sql_type in dataset_migrations.items():
+            if column not in dataset_columns:
+                db.session.execute(text(
+                    f'ALTER TABLE datasets ADD COLUMN {column} {sql_type}'
+                ))
+        db.session.commit()
     
     # Root route (redirect to dashboard or login based on auth state)
     @app.route('/')

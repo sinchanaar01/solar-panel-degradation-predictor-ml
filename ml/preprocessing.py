@@ -1,9 +1,13 @@
 """Shared training and inference cleaning for solar panel input features."""
 
 from pathlib import Path
+from functools import lru_cache
+import hashlib
 import re
 
+import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
 
 CATEGORICAL_LEVELS = {
@@ -22,6 +26,11 @@ UPLOAD_CATEGORY_DEFAULTS = {
     'string_id': 'A1',
     'error_code': 'missing',
     'installation_type': 'missing',
+}
+UPLOAD_CATEGORY_BASELINES = {
+    'string_id': 'A1',
+    'error_code': 'E00',
+    'installation_type': 'dual-axis',
 }
 _EXTERNAL_STRING_ID_PATTERN = re.compile(
     r'STR-(?:00[1-9]|0[1-9][0-9]|100)', re.IGNORECASE
@@ -51,6 +60,36 @@ class MissingColumnsError(ValueError):
         self.missing = tuple(missing)
         self.found = tuple(found)
         super().__init__('missing_required_columns')
+
+
+@lru_cache(maxsize=2)
+def get_training_feature_hashes(dataset_path=None):
+    """Hash numeric rows used to fit the model, excluding held-out rows."""
+    path = Path(dataset_path) if dataset_path else (
+        MODEL_DIR.parent / 'data' / 'train_cleaned.csv'
+    )
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent.parent / path
+    training = pd.read_csv(path, usecols=list(NUMERIC_FEATURES))
+    train_indices, _ = train_test_split(
+        np.arange(len(training)), test_size=0.20, random_state=42
+    )
+    values = training.loc[train_indices, NUMERIC_FEATURES].to_numpy(
+        dtype='float64'
+    )
+    return frozenset(
+        hashlib.sha256(np.round(row, 4).tobytes()).digest()
+        for row in values
+    )
+
+
+def count_training_feature_overlaps(features, training_hashes):
+    """Return the number of feature rows matching the model's train split."""
+    values = features.loc[:, NUMERIC_FEATURES].to_numpy(dtype='float64')
+    return sum(
+        hashlib.sha256(np.round(row, 4).tobytes()).digest() in training_hashes
+        for row in values
+    )
 
 
 def is_supported_string_identifier(value):
@@ -204,9 +243,40 @@ def clean_for_upload(df, medians_path=None):
     normalized = normalize_columns(df)
     _check_required_columns(normalized, NUMERIC_FEATURES)
     notices = []
+    cleaned = normalized.copy()
+    dummy_rebuilt = {}
+    has_encoded_categories = any(
+        f'{column}_{level}'.casefold() in cleaned.columns
+        for column, levels in CATEGORICAL_LEVELS.items()
+        for level in levels[1:]
+    )
+    for column, levels in CATEGORICAL_LEVELS.items():
+        if column in cleaned.columns:
+            continue
+        dummy_columns = {
+            level: f'{column}_{level}'.casefold()
+            for level in levels[1:]
+            if f'{column}_{level}'.casefold() in cleaned.columns
+        }
+        if not dummy_columns:
+            if has_encoded_categories:
+                cleaned[column] = UPLOAD_CATEGORY_BASELINES[column]
+            continue
+        baseline = UPLOAD_CATEGORY_BASELINES[column]
+        values = pd.Series(baseline, index=cleaned.index, dtype='object')
+        for level, dummy_column in dummy_columns.items():
+            active = pd.to_numeric(
+                cleaned[dummy_column], errors='coerce'
+            ).fillna(0).eq(1)
+            if (active & values.ne(baseline)).any():
+                raise ValueError('invalid_dummy_categories')
+            values.loc[active] = level
+        cleaned[column] = values
+        dummy_rebuilt[column] = tuple(dummy_columns.values())
+
     missing_categorical = [
         column for column in CATEGORICAL_COLUMNS
-        if column not in normalized.columns
+        if column not in cleaned.columns
     ]
     if missing_categorical:
         notices.append({
@@ -214,7 +284,6 @@ def clean_for_upload(df, medians_path=None):
             'columns': missing_categorical,
         })
 
-    cleaned = normalized.copy()
     for column, default in UPLOAD_CATEGORY_DEFAULTS.items():
         if column not in cleaned.columns:
             cleaned[column] = default
@@ -257,6 +326,9 @@ def clean_for_upload(df, medians_path=None):
             })
             canonical.loc[unknown_mask] = fallback
         cleaned[column] = canonical
+
+    for column, dummy_columns in dummy_rebuilt.items():
+        cleaned = cleaned.drop(columns=list(dummy_columns), errors='ignore')
 
     return encode_categoricals(cleaned), notices
 

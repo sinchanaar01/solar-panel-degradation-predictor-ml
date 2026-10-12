@@ -123,6 +123,12 @@ the dashboard.
    and comma-, semicolon-, and tab-delimited files are supported. Blank or
    unknown category values use documented defaults and produce a notice;
    arbitrary panel identifiers are retained as `panel_id` in the download.
+   Uploads are limited to 50,000 rows and predicted in 5,000-row chunks.
+   When `efficiency` is present, non-zero values are compared with predictions
+   using MAE, RMSE, and R²; zero or invalid targets are excluded from those
+   metrics. A holdout sample is available from the upload page for a clean
+   evaluation, while an overlap warning identifies rows matching model-training
+   features.
 4. Review the predicted efficiency, recommendation, age-sweep forecast, global
    feature importances, and any out-of-training-range warning.
 5. Download a single-result PDF/Excel report or a batch predictions CSV from

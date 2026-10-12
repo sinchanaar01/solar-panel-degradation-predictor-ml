@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import openpyxl
+import numpy as np
 import pandas as pd
 import pytest
 from flask import Flask
@@ -12,6 +13,7 @@ from sqlalchemy import event
 from app.app import create_app
 from app.config import DevelopmentConfig, ProductionConfig, TestingConfig
 from app.models_db import AuditLog, Dataset, PredictionResult, User, db
+from app.routes import dataset as dataset_routes
 from app.utils.maintenance_rules import get_maintenance_recommendation
 from app.utils.report_generator import generate_excel, generate_pdf
 from app.utils.translations import SUPPORTED_LANGS, TRANSLATIONS, t
@@ -330,6 +332,70 @@ def test_csv_missing_required_columns_shows_clear_error(app, client):
     assert b'Columns found in your file: temperature' in response.data
 
 
+def test_preencoded_upload_rebuilds_categorical_text_and_ignores_id():
+    numeric = _valid_row()
+    row = {key: numeric[key] for key in NUMERIC_FEATURES}
+    row.update({
+        'id': 4,
+        'string_id_B2': 1,
+        'error_code_E01': 0,
+        'installation_type_fixed': 0,
+    })
+    encoded, notices = clean_for_upload(pd.DataFrame([row]))
+    assert encoded.loc[0, 'string_id_B2'] == 1
+    assert encoded.loc[0, 'error_code_E01'] == 0
+    assert encoded.loc[0, 'installation_type_fixed'] == 0
+    assert all(notice['type'] != 'missing' for notice in notices)
+
+
+def test_missing_column_error_is_bounded_with_first_twenty_found(app, client):
+    _authenticate_client(app, client)
+    row = {'pressure': 1013}
+    row.update({f'extra_{number}': number for number in range(30)})
+    response = _post_csv(
+        client, pd.DataFrame([row]).to_csv(index=False).encode(),
+        follow_redirects=True,
+    )
+    message = re.search(
+        rb'<div class="message error">(.*?)</div>', response.data, re.DOTALL
+    ).group(1)
+    assert b'Columns found in your file:' in message
+    assert b'extra_5' in message
+    assert b'...' in message
+    assert len(message) < 300
+
+
+def test_upload_row_cap_rejects_over_fifty_thousand_rows(app, client):
+    _authenticate_client(app, client)
+    row = _valid_row()
+    rows = pd.DataFrame([row] * 50_001)
+    response = _post_csv(
+        client, rows.to_csv(index=False).encode(),
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b'upload limit is 50,000 rows' in response.data
+
+
+def test_upload_predictions_are_processed_in_bounded_chunks(
+        app, client, monkeypatch):
+    _authenticate_client(app, client)
+    chunk_sizes = []
+
+    def fake_predict_batch(frame, **_kwargs):
+        chunk_sizes.append(len(frame))
+        return np.full(len(frame), 0.5)
+
+    monkeypatch.setattr(dataset_routes, 'predict_batch', fake_predict_batch)
+    rows = pd.DataFrame([_valid_row()] * 5_001)
+    response = _post_csv(
+        client, rows.to_csv(index=False).encode(),
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert chunk_sizes == [5_000, 1]
+
+
 def test_upload_accepts_case_and_whitespace_normalized_categories(app, client):
     _authenticate_client(app, client)
     row = _valid_row(string_id=' A1 ', error_code='e00',
@@ -353,7 +419,8 @@ def test_upload_unknown_category_is_defaulted_with_short_notice(app, client):
     assert b'installation_type: 1 rows' in response.data
     assert b'default group missing' in response.data
     notice = re.search(
-        rb'<div class="message info">(.*?)</div>', response.data, re.DOTALL
+        rb'<div class="message info upload-warning"[^>]*>(.*?)</div>',
+        response.data, re.DOTALL
     )
     assert notice is not None
     assert len(notice.group(1)) < 300
@@ -384,7 +451,8 @@ def test_arbitrary_string_ids_are_kept_in_predictions_csv(app, client):
     )
     assert response.status_code == 200
     notices = re.findall(
-        rb'<div class="message info">(.*?)</div>', response.data, re.DOTALL
+        rb'<div class="message info upload-warning"[^>]*>(.*?)</div>',
+        response.data, re.DOTALL
     )
     unknown_notice = next(
         notice for notice in notices if b'string_id: 100 rows' in notice
@@ -432,6 +500,105 @@ def test_upload_template_is_login_protected_and_downloadable(app, client):
         *NUMERIC_FEATURES, 'string_id', 'error_code', 'installation_type'
     ]
     assert len(sample) == 5
+
+
+def test_holdout_sample_route_requires_login_and_downloads_csv(app, client):
+    anonymous = client.get('/upload/holdout-sample')
+    assert anonymous.status_code == 302
+    assert anonymous.headers['Location'].endswith(
+        '/login?next=%2Fupload%2Fholdout-sample'
+    )
+    _authenticate_client(app, client)
+    response = client.get('/upload/holdout-sample')
+    assert response.status_code == 200
+    assert len(pd.read_csv(io.BytesIO(response.data))) == 200
+
+
+def test_upload_actual_efficiency_metrics_and_prediction_column_order(app, client):
+    _authenticate_client(app, client)
+    rows = [_valid_row(panel_id=f'panel-{index}') for index in range(4)]
+    actuals = [0.4, 0.5, 0.6, 0]
+    csv_rows = [{**row, 'efficiency': target}
+                for row, target in zip(rows, actuals)]
+    response = _post_csv(
+        client, pd.DataFrame(csv_rows).to_csv(index=False).encode(),
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b'Comparison with actual efficiency' in response.data
+    assert b'1 rows with missing or zero actual efficiency' in response.data
+    assert b'actualScatter' in response.data
+    with app.app_context():
+        dataset = Dataset.query.one()
+        assert dataset.actual_mae is not None
+        assert dataset.actual_rmse is not None
+        assert dataset.actual_r2 is not None
+        assert dataset.actual_ignored == 1
+        dataset_id = dataset.id
+    download = client.get(f'/upload/{dataset_id}/download')
+    output = pd.read_csv(io.BytesIO(download.data))
+    assert list(output.columns[:7]) == [
+        'panel_id', 'predicted_efficiency', 'status', 'recommendation',
+        'actual_efficiency', 'error', 'temperature',
+    ]
+    assert output['predicted_efficiency'].map(
+        lambda value: round(float(value), 4)
+    ).equals(output['predicted_efficiency'])
+
+
+def test_efficiency_target_is_not_used_for_prediction(app, client):
+    _authenticate_client(app, client)
+    row = _valid_row(panel_id='comparison-panel')
+    predictions = []
+    for efficiency in (0.2, 0.9):
+        payload = {**row, 'efficiency': efficiency}
+        response = _post_csv(
+            client, pd.DataFrame([payload]).to_csv(index=False).encode(),
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        with app.app_context():
+            dataset = Dataset.query.order_by(Dataset.id.desc()).first()
+            dataset_id = dataset.id
+        output = pd.read_csv(io.BytesIO(
+            client.get(f'/upload/{dataset_id}/download').data
+        ))
+        predictions.append(float(output.loc[0, 'predicted_efficiency']))
+    assert predictions[0] == pytest.approx(predictions[1])
+
+
+def test_training_overlap_warning_and_heldout_upload_metrics(app, client):
+    _authenticate_client(app, client)
+    root = Path(__file__).resolve().parents[1]
+    train_response = _post_csv(
+        client, (root / 'data' / 'train_cleaned.csv').read_bytes(),
+        filename='train_cleaned.csv', follow_redirects=True,
+    )
+    assert train_response.status_code == 200
+    assert b'Most rows come from the model training data' in train_response.data
+    holdout = _post_csv(
+        client, (root / 'data' / 'holdout_demo_200.csv').read_bytes(),
+        filename='holdout_demo_200.csv', follow_redirects=True,
+    )
+    assert holdout.status_code == 200
+    assert b'Most rows come from the model training data' not in holdout.data
+    with app.app_context():
+        holdout_dataset = Dataset.query.order_by(Dataset.id.desc()).first()
+        assert holdout_dataset.actual_r2 == pytest.approx(0.8179016464, abs=0.05)
+
+
+def test_holdout_export_matches_saved_model_r2():
+    from ml.make_holdout import make_holdout
+
+    root = Path(__file__).resolve().parents[1]
+    result = make_holdout(
+        data_path=root / 'data' / 'train_cleaned.csv',
+        models_dir=root / 'models',
+        outputs_dir=root / 'data',
+    )
+    assert result['holdout_r2'] == pytest.approx(result['saved_r2'], abs=0.01)
+    assert len(pd.read_csv(result['test_path'])) == 3_874
+    assert len(pd.read_csv(result['demo_path'])) == 200
 
 
 def test_training_dataset_csv_uploads_successfully(app, client):

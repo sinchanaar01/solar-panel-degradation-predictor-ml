@@ -73,6 +73,14 @@ class Dataset(db.Model):
     max_eff = db.Column(db.Float)
     count_critical = db.Column(db.Integer)
     predictions_path = db.Column(db.String(500))
+    actual_mae = db.Column(db.Float)
+    actual_rmse = db.Column(db.Float)
+    actual_r2 = db.Column(db.Float)
+    actual_ignored = db.Column(db.Integer)
+    has_actual_efficiency = db.Column(db.Boolean, nullable=False, default=False)
+    upload_notices = db.Column(db.Text)
+    overlap_percentage = db.Column(db.Float)
+    scatter_data = db.Column(db.Text)
     
     # Relationships
     predictions = db.relationship('PredictionResult', backref='dataset', lazy='dynamic', cascade='all, delete-orphan')

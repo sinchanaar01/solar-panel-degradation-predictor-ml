@@ -23,7 +23,7 @@ categorical vocabulary and preprocessing contract in `ml/preprocessing.py`.
 | Evaluation | `ml/evaluate_model.py` compares held-out RMSE, MAE, and R², saves `outputs/model_metrics.csv`, and saves model plots |
 | Manual prediction | `app/routes/predict.py` validates simple-mode and advanced-mode inputs, invokes `ml/predict.py`, saves results, and uses the recommendation engine's severity |
 | Age forecast | `ml/degradation.py` sweeps panel age from 0 to 35 while holding remaining inputs fixed; a linear fit summarizes the non-smooth tree-model predictions |
-| CSV prediction | `app/routes/dataset.py` validates an unlabeled CSV, predicts each row, persists summary statistics, and provides an owned predictions-CSV download |
+| CSV prediction | `app/routes/dataset.py` normalizes headers, validates numeric inputs, applies optional categorical defaults, predicts in bounded chunks, reports actual-target metrics and training overlap, and provides an owned predictions-CSV download |
 | Recommendation | `app/utils/maintenance_rules.py` evaluates prioritized efficiency, cleanliness, and age rules |
 | Reports | `app/routes/reports.py` checks result ownership and streams user-language-selected PDF/Excel from `app/utils/report_generator.py`; bundled Noto fonts shape Indic PDF text |
 | Browser charts | `app/templates/results.html` renders the age curve, current-age and 0.40 markers, and top eight global feature importances with Chart.js |
@@ -36,7 +36,18 @@ zero-efficiency target, leaving **19,369 rows** (15,495 training and 3,874 test
 rows with the reproducible 80/20 split). Missing feature numerics are imputed,
 categorical missing values use the `missing` vocabulary where supported, and
 fixed-level manual dummy encoding is used for training, single predictions,
-and CSV predictions. Unknown categories and absent required columns are errors.
+and CSV predictions. Numeric columns are required for upload; absent or blank
+categorical columns use the documented defaults, and unknown category values
+are safely mapped to those defaults with a notice. The single-panel form keeps
+strict categorical validation.
+
+Batch uploads are limited to 50,000 records and inferred in 5,000-row chunks.
+If `efficiency` is included, non-zero numeric target values are compared to
+predictions with MAE, RMSE, and R²; invalid and zero values are counted as
+ignored. Upload result pages show up to ten output rows and a scatter plot
+sampled to at most 500 actual/predicted pairs. Feature overlap is hashed
+against only the reproducible 80% model-training split, so a held-out example
+is not incorrectly reported as training data.
 
 The feature `soiling_ratio` is treated as a cleanliness index because the data
 shows efficiency increasing with the value; 1.0 is clean and lower values are

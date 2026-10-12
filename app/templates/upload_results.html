@@ -12,20 +12,24 @@
     </p>
     {% endif %}
 
+    {% for notice in upload_notices %}
+    <div class="message info upload-warning" role="status">{{ notice }}</div>
+    {% endfor %}
+
     <div class="batch-metrics">
-        <div style="background:#f0f7ff; padding:20px; border-radius:8px;">
+        <div class="batch-metric-card">
             <div style="font-size:28px; font-weight:bold; color:#3366cc;">{{ "%.3f"|format(dataset.mean_eff) }}</div>
             <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('mean_efficiency') }}</div>
         </div>
-        <div style="background:#f0fff4; padding:20px; border-radius:8px;">
+        <div class="batch-metric-card">
             <div style="font-size:28px; font-weight:bold; color:#2e7d32;">{{ "%.3f"|format(dataset.max_eff) }}</div>
             <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('best_panel') }}</div>
         </div>
-        <div style="background:#fff8f0; padding:20px; border-radius:8px;">
+        <div class="batch-metric-card">
             <div style="font-size:28px; font-weight:bold; color:#e65100;">{{ "%.3f"|format(dataset.min_eff) }}</div>
             <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('worst_panel') }}</div>
         </div>
-        <div style="background:#fff0f0; padding:20px; border-radius:8px;">
+        <div class="batch-metric-card">
             <div style="font-size:28px; font-weight:bold; color:#c62828;">{{ dataset.count_critical }}</div>
             <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('critical_panels') }}</div>
         </div>
@@ -43,18 +47,45 @@
         </a>
     </div>
 
+    {% if has_actual_metrics %}
+    <section class="actual-metrics">
+        <h3>{{ t('upload_actual_metrics') }}</h3>
+        <dl class="actual-metric-grid">
+            <div><dt>{{ t('upload_mae') }}</dt><dd>{% if dataset.actual_mae is not none %}{{ "%.4f"|format(dataset.actual_mae) }}{% else %}{{ t('not_available') }}{% endif %}</dd></div>
+            <div><dt>{{ t('upload_rmse') }}</dt><dd>{% if dataset.actual_rmse is not none %}{{ "%.4f"|format(dataset.actual_rmse) }}{% else %}{{ t('not_available') }}{% endif %}</dd></div>
+            <div><dt>{{ t('upload_r2') }}</dt><dd>{% if dataset.actual_r2 is not none %}{{ "%.4f"|format(dataset.actual_r2) }}{% else %}{{ t('not_available') }}{% endif %}</dd></div>
+        </dl>
+        {% if dataset.actual_ignored %}
+        <p class="muted">{{ t('upload_actual_ignored', count=dataset.actual_ignored) }}</p>
+        {% endif %}
+        {% if scatter_data %}
+        <div class="chart-panel">
+            <canvas id="actualScatter" role="img"
+                    aria-label="{{ t('upload_actual_metrics') }}"
+                    aria-describedby="actual-scatter-summary"></canvas>
+        </div>
+        <p id="actual-scatter-summary" class="muted">
+            {{ t('chart_scatter_summary', count=scatter_data|length) }}
+        </p>
+        {% endif %}
+    </section>
+    {% endif %}
+
     {% if preview_rows %}
-    <section style="margin-top:28px; text-align:left;">
-        <h3>{{ t('upload_preview_title') }}</h3>
+    <section class="upload-preview">
+        <h3>{{ t('upload_result_preview') }}</h3>
         <p>{{ t('upload_preview_first_rows', count=preview_rows|length) }}</p>
         <div class="table-scroll" role="region" tabindex="0"
              aria-label="{{ t('upload_preview_title') }}">
-            <table>
+            <table class="upload-result-table">
                 <thead>
                     <tr>{% for column in preview_columns %}
                         <th>
                             {% if column == 'panel_id' %}{{ t('panel_id') }}
                             {% elif column == 'predicted_efficiency' %}{{ t('predicted_efficiency') }}
+                            {% elif column == 'actual_efficiency' %}{{ t('actual_efficiency') }}
+                            {% elif column == 'error' %}{{ t('prediction_error') }}
+                            {% elif column == 'status' %}{{ t('upload_status') }}
                             {% elif column == 'recommendation' %}{{ t('recommendation') }}
                             {% else %}{{ column }}{% endif %}
                         </th>
@@ -63,7 +94,15 @@
                 <tbody>
                     {% for row in preview_rows %}
                     <tr>{% for column in preview_columns %}
-                        <td>{{ row[column] }}</td>
+                        <td>
+                            {% if column == 'status' %}
+                                <span class="status-badge {{ 'urgent' if row[column] == 'critical' else 'watch' if row[column] == 'warning' else 'good' }}">
+                                    {{ t('severity_ok') if row[column] == 'ok' else t(row[column]) }}
+                                </span>
+                            {% else %}
+                                {{ row[column] }}
+                            {% endif %}
+                        </td>
                     {% endfor %}</tr>
                     {% endfor %}
                 </tbody>
@@ -72,4 +111,44 @@
     </section>
     {% endif %}
 </div>
+{% if scatter_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const scatterPoints = {{ scatter_data | tojson }};
+const actualValues = scatterPoints.map(point => point.actual);
+const predictedValues = scatterPoints.map(point => point.predicted);
+const chartMin = Math.min(...actualValues, ...predictedValues);
+const chartMax = Math.max(...actualValues, ...predictedValues);
+new Chart(document.getElementById('actualScatter'), {
+    type: 'scatter',
+    data: {
+        datasets: [
+            {
+                label: {{ t('upload_actual_metrics') | tojson }},
+                data: scatterPoints.map(point => ({
+                    x: point.actual, y: point.predicted
+                })),
+                backgroundColor: '#354a9b'
+            },
+            {
+                label: 'y=x',
+                data: [{x: chartMin, y: chartMin}, {x: chartMax, y: chartMax}],
+                type: 'line',
+                showLine: true,
+                pointRadius: 0,
+                borderColor: '#b42318',
+                borderDash: [5, 4]
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            x: { title: { display: true, text: {{ t('actual_efficiency') | tojson }} } },
+            y: { title: { display: true, text: {{ t('predicted_efficiency') | tojson }} } }
+        }
+    }
+});
+</script>
+{% endif %}
 {% endblock %}
