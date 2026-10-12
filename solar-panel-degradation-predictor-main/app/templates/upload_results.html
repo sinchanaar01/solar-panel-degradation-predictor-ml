@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Upload Results — Solar Panel Predictor{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 700px; text-align:center;">
+    <h2>Batch Prediction Complete</h2>
+
+    {% if dataset %}
+    <p style="color:#666; margin:16px 0; font-size:14px;">
+        File: <strong>{{ dataset.filename }}</strong> &mdash;
+        {{ dataset.rows_count }} rows processed
+    </p>
+    {% endif %}
+
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:16px; margin:30px 0;">
+        <div style="background:#f0f7ff; padding:20px; border-radius:8px;">
+            <div style="font-size:28px; font-weight:bold; color:#3366cc;">{{ "%.3f"|format(mean_eff or 0) }}</div>
+            <div style="font-size:13px; color:#666; margin-top:6px;">Mean Efficiency</div>
+        </div>
+        <div style="background:#f0fff4; padding:20px; border-radius:8px;">
+            <div style="font-size:28px; font-weight:bold; color:#2e7d32;">{{ "%.3f"|format(max_eff or 0) }}</div>
+            <div style="font-size:13px; color:#666; margin-top:6px;">Best Panel</div>
+        </div>
+        <div style="background:#fff8f0; padding:20px; border-radius:8px;">
+            <div style="font-size:28px; font-weight:bold; color:#e65100;">{{ "%.3f"|format(min_eff or 0) }}</div>
+            <div style="font-size:13px; color:#666; margin-top:6px;">Worst Panel</div>
+        </div>
+        <div style="background:#fff0f0; padding:20px; border-radius:8px;">
+            <div style="font-size:28px; font-weight:bold; color:#c62828;">{{ count_critical or 0 }}</div>
+            <div style="font-size:13px; color:#666; margin-top:6px;">Critical (&lt; 0.40)</div>
+        </div>
+    </div>
+
+    <div style="display:flex; gap:16px; justify-content:center; margin-top:20px;">
+        <a href="{{ url_for('dataset.upload') }}" style="padding:10px 24px; background:#667eea; color:white; text-decoration:none; border-radius:4px; font-size:14px;">
+            Upload Another
+        </a>
+        <a href="{{ url_for('predict.predict') }}" style="padding:10px 24px; background:#555; color:white; text-decoration:none; border-radius:4px; font-size:14px;">
+            Manual Prediction
+        </a>
+    </div>
+</div>
+{% endblock %}

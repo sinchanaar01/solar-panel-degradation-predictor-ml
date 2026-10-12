@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t('dashboard') }} - {{ t('app_name') }}{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 800px; text-align: center;">
+    <h2>{{ t('welcome_title', username=current_user.username) }}</h2>
+    
+    <p class="muted" style="margin: 20px 0; font-size: 16px;">
+        {{ t('dashboard_intro') }}
+    </p>
+    
+    <div class="dashboard-grid">
+        <div style="background: #f5f5f5; padding: 20px; border-radius: 8px;">
+            <h3 style="color: #333; margin-bottom: 10px;">{{ t('upload_dataset') }}</h3>
+            <p class="muted" style="font-size: 14px; margin-bottom: 15px;">
+                {{ t('upload_desc') }}
+            </p>
+            <a class="action-link" href="{{ url_for('dataset.upload') }}">
+                {{ t('upload') }}
+            </a>
+        </div>
+        
+        <div style="background: #f5f5f5; padding: 20px; border-radius: 8px;">
+            <h3 style="color: #333; margin-bottom: 10px;">{{ t('make_prediction') }}</h3>
+            <p class="muted" style="font-size: 14px; margin-bottom: 15px;">
+                {{ t('prediction_desc') }}
+            </p>
+            <a class="action-link" href="{{ url_for('predict.predict') }}">
+                {{ t('predict') }}
+            </a>
+        </div>
+        
+        <div style="background: #f5f5f5; padding: 20px; border-radius: 8px;">
+            <h3 style="color: #333; margin-bottom: 10px;">{{ t('view_history') }}</h3>
+            <p class="muted" style="font-size: 14px; margin-bottom: 15px;">
+                {{ t('history_desc') }}
+            </p>
+            <a class="action-link" href="{{ url_for('predict.history') }}">
+                {{ t('history') }}
+            </a>
+        </div>
+        
+        <div style="background: #f5f5f5; padding: 20px; border-radius: 8px;">
+            <h3 style="color: #333; margin-bottom: 10px;">{{ t('reports') }}</h3>
+            <p class="muted" style="font-size: 14px; margin-bottom: 15px;">
+                {{ t('reports_desc') }}
+            </p>
+            <a class="action-link" href="{{ url_for('predict.history') }}">
+                {{ t('reports') }}
+            </a>
+        </div>
+
+    </div>
+
+    <section class="dashboard-recent" aria-labelledby="recent-heading">
+        <h3 id="recent-heading">{{ t('dashboard_latest') }}</h3>
+        {% if latest_prediction %}
+        <p class="muted">{{ t('predicted_efficiency') }}:
+            <strong>{{ "%.4f"|format(latest_prediction.predicted_efficiency) }}</strong>
+        </p>
+        <a class="action-link" href="{{ url_for('predict.results', result_id=latest_prediction.id) }}">
+            {{ t('go_to_result') }}
+        </a>
+        {% else %}
+        <p class="muted">{{ t('dashboard_empty') }}</p>
+        {% endif %}
+    </section>
+    
+    <div style="margin-top: 50px; padding: 20px; background: #f0f0f0; border-radius: 8px; text-align: left;">
+        <h3 style="color: #333; margin-bottom: 10px;">{{ t('about_system') }}</h3>
+        <p class="muted" style="font-size: 14px; margin: 10px 0;">
+            <strong>{{ t('model_label') }}:</strong>
+            {{ t('model_metrics', r2='0.8179', rmse='0.0456', mae='0.0346') }}
+        </p>
+        <p class="muted" style="font-size: 14px; margin: 10px 0;">
+            <strong>{{ t('primary_predictor') }}:</strong> {{ t('irradiance') }} (0.684)
+        </p>
+        <p class="muted" style="font-size: 14px; margin: 10px 0;">
+            <strong>{{ t('secondary_factors') }}:</strong> {{ t('cleanliness_index') }}, {{ t('panel_age') }}, {{ t('humidity') }}
+        </p>
+        <p class="muted" style="font-size:14px; margin:10px 0;">{{ t('soiling_data_note') }}</p>
+    </div>
+</div>
+{% endblock %}

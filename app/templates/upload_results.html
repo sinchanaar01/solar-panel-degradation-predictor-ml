@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ t('upload_result') }} — {{ t('app_name') }}{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 700px; text-align:center;">
+    <h2>{{ t('batch_complete') }}</h2>
+
+    {% if dataset %}
+    <p style="color:#666; margin:16px 0; font-size:14px;">
+        {{ t('file_name') }}: <strong>{{ dataset.filename }}</strong> &mdash;
+        {{ t('rows_processed', count=dataset.rows_count) }}
+    </p>
+    {% endif %}
+
+    <div class="batch-metrics">
+        <div style="background:#f0f7ff; padding:20px; border-radius:8px;">
+            <div style="font-size:28px; font-weight:bold; color:#3366cc;">{{ "%.3f"|format(dataset.mean_eff) }}</div>
+            <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('mean_efficiency') }}</div>
+        </div>
+        <div style="background:#f0fff4; padding:20px; border-radius:8px;">
+            <div style="font-size:28px; font-weight:bold; color:#2e7d32;">{{ "%.3f"|format(dataset.max_eff) }}</div>
+            <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('best_panel') }}</div>
+        </div>
+        <div style="background:#fff8f0; padding:20px; border-radius:8px;">
+            <div style="font-size:28px; font-weight:bold; color:#e65100;">{{ "%.3f"|format(dataset.min_eff) }}</div>
+            <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('worst_panel') }}</div>
+        </div>
+        <div style="background:#fff0f0; padding:20px; border-radius:8px;">
+            <div style="font-size:28px; font-weight:bold; color:#c62828;">{{ dataset.count_critical }}</div>
+            <div style="font-size:13px; color:#666; margin-top:6px;">{{ t('critical_panels') }}</div>
+        </div>
+    </div>
+
+    <div class="batch-actions">
+        <a class="action-link" href="{{ url_for('dataset.upload') }}">
+            {{ t('upload_another') }}
+        </a>
+        <a class="action-link" href="{{ url_for('predict.predict') }}">
+            {{ t('predict') }}
+        </a>
+        <a class="action-link" href="{{ url_for('dataset.download_predictions', dataset_id=dataset.id) }}">
+            {{ t('download_predictions') }}
+        </a>
+    </div>
+</div>
+{% endblock %}

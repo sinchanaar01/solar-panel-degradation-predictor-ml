@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.venv-review
+__pycache__
+*.py[cod]
+.pytest_cache
+.env
+.env.*
+instance
+uploads
+outputs
+notebooks
+tests
+solar-panel-degradation-predictor-main
+*.db

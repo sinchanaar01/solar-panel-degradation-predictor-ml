@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}{{ t('prediction_result', id=result.id) }} — {{ t('app_name') }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.result-container { max-width: 1000px; }
+.efficiency-badge { font-size: 56px; font-weight: 700; line-height: 1; margin: 12px 0; }
+.rec-box { padding: 18px 24px; border-radius: 8px; font-size: 15px; font-weight: 600;
+           margin: 20px 0; border-left: 5px solid; }
+.rec-box.critical { background:#fff0f0; border-color:#a61b13; color:#8a1c13; }
+.rec-box.warning { background:#fff8e1; border-color:#8a3b00; color:#684600; }
+.rec-box.ok { background:#f0fff4; border-color:#287a3d; color:#185b2b; }
+.feature-table td { padding: 6px 12px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+.feature-table td:first-child { color:#4a4a4a; }
+.feature-table td:last-child { font-weight:600; text-align:right; }
+.chart-panel { min-width: 0; padding: 18px; border: 1px solid #eee; border-radius: 8px; }
+.metric-card { background:#f4f7ff; padding:18px; border-radius:8px; text-align:center; }
+.metric-value { font-size:24px; font-weight:700; color:#354a9b; margin:6px 0; }
+.status-badge { display:inline-flex; padding:6px 12px; border-radius:999px; font-weight:700; }
+.status-badge.good { background:#e4f5e8; color:#185b2b; }
+.status-badge.watch { background:#fff1cf; color:#684600; }
+.status-badge.urgent { background:#fde7e5; color:#8a1c13; }
+.metric-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+@media (max-width:700px) { .chart-grid, .data-grid, .metric-grid { grid-template-columns:1fr !important; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container result-container">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+        <h2>{{ t('prediction_result', id=result.id) }}</h2>
+        <div class="muted" style="font-size:12px;">{{ result.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+    </div>
+    <p class="muted" style="font-size:13px;">{{ t('prediction_mode') }}: <strong>{{ t(prediction_mode) }}</strong></p>
+
+    <div style="text-align:center; padding:24px; background:#f9f9f9; border-radius:8px;">
+        <p class="muted" style="font-size:13px; margin-bottom:4px;">{{ t('predicted_efficiency') }}</p>
+        <div class="efficiency-badge"
+             style="color: {% if recommendation_key == 'urgent' %}#8a1c13{% elif recommendation_key in ['cleaning', 'age_inspect'] %}#684600{% else %}#185b2b{% endif %};">
+            {{ "%.4f"|format(result.predicted_efficiency) }}
+        </div>
+        <p class="muted" style="font-size:12px;">({{ "%.1f"|format(result.predicted_efficiency * 100) }}%)</p>
+        <span class="status-badge {{ 'urgent' if recommendation_key == 'urgent' else 'watch' if recommendation_key in ['cleaning', 'age_inspect'] else 'good' }}"
+              aria-label="{{ t('screen_reader_status') }}: {{ t(status_key) }}">
+            {{ t(status_key) }}
+        </span>
+    </div>
+
+    {% if outside_training_range %}
+    <p role="status" style="margin:14px 0; padding:12px; background:#fff8e1; color:#765b00; border-radius:6px;">
+        {{ t('outside_range_warning') }}
+    </p>
+    {% endif %}
+
+    <div class="rec-box {{ severity }}">
+        <span style="font-size:20px; margin-right:10px;">
+            {% if severity == 'critical' %}&#x26A0;{% elif severity == 'warning' %}&#x1F527;{% else %}&#x2705;{% endif %}
+        </span>
+        <strong>{{ t('severity_ok') if severity == 'ok' else t(severity) }}:</strong>
+        {{ recommendation_text }}
+    </div>
+
+    <h3 style="margin:26px 0 12px;">{{ t('degradation_forecast') }}</h3>
+    <p class="muted" style="font-size:13px; margin-bottom:12px;">
+        {{ t('forecast_interpretation') }}
+    </p>
+    <div class="chart-panel">
+        <canvas id="degradationChart" height="120" role="img" aria-label="{{ t('chart_forecast') }}"
+                aria-describedby="forecast-chart-summary"></canvas>
+    </div>
+    <p id="forecast-chart-summary" class="muted" style="margin-top:10px;">
+        {{ t('chart_forecast_summary', age="%.1f"|format(forecast.current_age)) }}
+    </p>
+    <div class="metric-grid">
+        <div class="metric-card">
+            <div>{{ t('loss_card') }}</div>
+            <div class="metric-value">{{ "%+.5f"|format(forecast.loss_per_year) }}</div>
+            <small>{{ t('efficiency_units_note') }}</small>
+        </div>
+        <div class="metric-card">
+            <div>{{ t('threshold_card') }}</div>
+            <div class="metric-value">
+                {% if forecast.years_to_threshold is none %}
+                    {{ t('not_within_range') }}
+                {% else %}
+                    {{ "%.1f"|format(forecast.years_to_threshold) }}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <h3 style="margin:30px 0 12px;">{{ t('feature_importances') }}</h3>
+    <div class="chart-panel">
+        <canvas id="importanceChart" height="150" role="img"
+                aria-label="{{ t('feature_importances') }}"
+                aria-describedby="importance-chart-summary"></canvas>
+    </div>
+    <p id="importance-chart-summary" class="muted" style="margin-top:10px;">
+        {{ t('chart_importance_summary') }}
+    </p>
+    <details style="margin-top:8px;">
+        <summary>{{ t('chart_data_summary') }}</summary>
+        <ol>
+            {% for feature in importance_labels %}
+            <li>{{ t('importance_value', feature=feature, value="%.4f"|format(importance_values[loop.index0])) }}</li>
+            {% endfor %}
+        </ol>
+    </details>
+
+    <div class="data-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:24px; align-items:start;">
+        <div>
+            <p style="font-weight:600; font-size:13px; color:#444; margin-bottom:10px;">{{ t('input_values') }}</p>
+            <table class="feature-table" style="width:100%; border-collapse:collapse;">
+                {% for k, v in input_data.items() if k != 'prediction_mode' %}
+                <tr><td>{{ t('soiling_label') if k == 'soiling_ratio' else t(k) }}</td><td>{{ t(option_labels.get(k, {}).get(v, v)) if k in option_labels else v }}</td></tr>
+                {% endfor %}
+            </table>
+        </div>
+        <div>
+            <p style="font-weight:600; font-size:13px; color:#444; margin-bottom:10px;">{{ t('report_downloads') }}</p>
+            <form method="get" style="display:grid; gap:10px;">
+                <label for="report-language">{{ t('download_report_language') }}</label>
+                <select id="report-language" name="lang">
+                    {% for code, name in SUPPORTED_LANGS.items() %}
+                    <option value="{{ code }}" {% if current_lang == code %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" formaction="{{ url_for('reports.download_pdf', result_id=result.id) }}">{{ t('download_pdf') }}</button>
+                <button type="submit" formaction="{{ url_for('reports.download_excel', result_id=result.id) }}">{{ t('download_excel') }}</button>
+            </form>
+            <div style="display:grid; gap:10px; margin-top:12px;">
+                <a href="{{ url_for('predict.history') }}">{{ t('prediction_history') }}</a>
+                <a href="{{ url_for('predict.predict') }}">{{ t('new_prediction') }}</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const forecastCurve = {{ forecast.curve | tojson }};
+const currentAge = {{ forecast.current_age | tojson }};
+const currentAgeMarker = {
+    id: 'currentAgeMarker',
+    afterDraw(chart) {
+        const x = chart.scales.x.getPixelForValue(currentAge);
+        const area = chart.chartArea;
+        const context = chart.ctx;
+        context.save();
+        context.strokeStyle = '#d35400';
+        context.setLineDash([5, 4]);
+        context.beginPath();
+        context.moveTo(x, area.top);
+        context.lineTo(x, area.bottom);
+        context.stroke();
+        context.restore();
+    }
+};
+new Chart(document.getElementById('degradationChart'), {
+    type: 'line',
+    data: {
+        datasets: [
+            {
+                label: {{ t('chart_predicted') | tojson }},
+                data: forecastCurve.map(point => ({x: point.age, y: point.efficiency})),
+                borderColor: '#526ce0',
+                backgroundColor: 'rgba(82,108,224,0.12)',
+                pointRadius: 2,
+                tension: 0,
+            },
+            {
+                label: {{ t('chart_threshold') | tojson }},
+                data: [{x: 0, y: 0.4}, {x: 35, y: 0.4}],
+                borderColor: '#c62828',
+                borderDash: [6, 4],
+                pointRadius: 0,
+                fill: false,
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom' } },
+        scales: {
+            x: { type: 'linear', min: 0, max: 35, title: { display: true, text: {{ t('chart_age_axis') | tojson }} } },
+            y: { min: 0, max: 1, title: { display: true, text: {{ t('chart_efficiency_axis') | tojson }} } }
+        }
+    },
+    plugins: [currentAgeMarker]
+});
+new Chart(document.getElementById('importanceChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ importance_labels | tojson }},
+        datasets: [{
+            label: {{ t('global_importance') | tojson }},
+            data: {{ importance_values | tojson }},
+            backgroundColor: '#667eea',
+            borderRadius: 4,
+        }]
+    },
+    options: {
+        indexAxis: 'y',
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, title: { display: true, text: {{ t('chart_importance_axis') | tojson }} } }
+    }
+});
+</script>
+{% endblock %}

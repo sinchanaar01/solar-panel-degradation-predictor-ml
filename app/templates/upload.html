@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ t('upload_title') }} — {{ t('app_name') }}{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 600px;">
+    <h2>{{ t('upload_title') }}</h2>
+    <p style="color:#666; margin-bottom:24px; font-size:14px;">
+        {{ t('upload_description') }}
+        <br><strong>{{ t('required_columns_label') }}:</strong>
+        {{ t('temperature') }}, {{ t('irradiance') }}, {{ t('humidity') }},
+        {{ t('panel_age') }}, {{ t('maintenance_count') }}, {{ t('soiling_label') }},
+        {{ t('voltage') }}, {{ t('current') }}, {{ t('module_temperature') }},
+        {{ t('cloud_coverage') }}, {{ t('wind_speed') }}, {{ t('pressure') }},
+        {{ t('string_id') }}, {{ t('error_code') }}, {{ t('installation_type') }}.
+    </p>
+
+    <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="file">{{ t('file_label') }}:</label>
+            <input type="file" id="file" name="file" accept=".csv" required
+                   style="width:100%;padding:10px;border:1px dashed #aaa;border-radius:4px;background:#fafafa;cursor:pointer;">
+        </div>
+        <button type="submit">{{ t('upload_predict') }}</button>
+    </form>
+
+    <div class="footer-link" style="margin-top:16px;">
+        <a href="{{ url_for('predict.predict') }}">{{ t('single_row_link') }}</a>
+    </div>
+</div>
+{% endblock %}

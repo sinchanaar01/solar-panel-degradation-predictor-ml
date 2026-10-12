@@ -1,0 +1,20 @@
+services:
+  web:
+    build: .
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      FLASK_ENV: production
+      SECRET_KEY: ${SECRET_KEY:?Set a generated SECRET_KEY in the environment}
+      DATABASE_URL: sqlite:////app/instance/app.db
+      # Local HTTP works by default; set COOKIE_SECURE=true behind HTTPS.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+    volumes:
+      - app-instance:/app/instance
+      - app-uploads:/app/uploads
+    restart: unless-stopped
+
+volumes:
+  app-instance:
+  app-uploads:

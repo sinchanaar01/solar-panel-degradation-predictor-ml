@@ -1,0 +1,15 @@
+.env
+.venv/
+.venv-review/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+instance/
+uploads/
+outputs/*.pdf
+outputs/*.xlsx
+*.db
+.DS_Store
+Thumbs.db
+models/random_forest.joblib

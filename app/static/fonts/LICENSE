@@ -1,0 +1,16 @@
+These bundled font files are static instances of the official Noto Sans variable
+fonts from the Google Fonts repository. The repository's SIL Open Font License
+(OFL) notices for each family are included beside the fonts:
+
+- Noto Sans: NotoSans-OFL.txt
+- Noto Sans Kannada: NotoSansKannada-OFL.txt
+- Noto Sans Devanagari: NotoSansDevanagari-OFL.txt
+- Noto Sans Telugu: NotoSansTelugu-OFL.txt
+- Noto Sans Tamil: NotoSansTamil-OFL.txt
+
+Official sources:
+- https://github.com/google/fonts/tree/main/ofl/notosans
+- https://github.com/google/fonts/tree/main/ofl/notosanskannada
+- https://github.com/google/fonts/tree/main/ofl/notosansdevanagari
+- https://github.com/google/fonts/tree/main/ofl/notosanstelugu
+- https://github.com/google/fonts/tree/main/ofl/notosanstamil

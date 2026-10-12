@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Upload Dataset — Solar Panel Predictor{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 600px;">
+    <h2>Upload Dataset</h2>
+    <p style="color:#666; margin-bottom:24px; font-size:14px;">
+        Upload a CSV file with solar panel data. The same cleaning pipeline
+        used during model training is applied automatically before prediction.
+        <br><strong>Accepted columns:</strong> temperature, irradiance, humidity,
+        panel_age, maintenance_count, soiling_ratio, voltage, current,
+        module_temperature, cloud_coverage, wind_speed, pressure, string_id,
+        error_code, installation_type.
+    </p>
+
+    <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="file">CSV File (max 16 MB):</label>
+            <input type="file" id="file" name="file" accept=".csv" required
+                   style="width:100%;padding:10px;border:1px dashed #aaa;border-radius:4px;background:#fafafa;cursor:pointer;">
+        </div>
+        <button type="submit">Upload & Predict</button>
+    </form>
+
+    <div class="footer-link" style="margin-top:16px;">
+        <a href="{{ url_for('predict.predict') }}">Single-row manual prediction instead</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t('register_title') }} - {{ t('app_name') }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>{{ t('create_account') }}</h2>
+    
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="username">{{ t('username') }}:</label>
+            <input type="text" id="username" name="username" required autofocus>
+        </div>
+        <div class="form-group">
+            <label for="email">{{ t('email') }}:</label>
+            <input type="email" id="email" name="email" required autocomplete="email">
+        </div>
+        
+        <div class="form-group">
+            <label for="password">{{ t('password') }}:</label>
+            <input type="password" id="password" name="password" required minlength="8">
+        </div>
+        
+        <div class="form-group">
+            <label for="password_confirm">{{ t('confirm_password') }}:</label>
+            <input type="password" id="password_confirm" name="password_confirm" required minlength="8">
+        </div>
+        
+        <button type="submit">{{ t('register') }}</button>
+    </form>
+    <p style="font-size:13px; color:#666; margin-top:12px;">
+        {{ t('password_rules') }}
+    </p>
+    
+    <div class="footer-link">
+        {{ t('already_account') }} <a href="{{ url_for('auth.login') }}">{{ t('login') }}</a>
+    </div>
+</div>
+{% endblock %}
