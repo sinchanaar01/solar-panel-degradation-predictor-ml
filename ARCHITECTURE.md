@@ -27,7 +27,7 @@ categorical vocabulary and preprocessing contract in `ml/preprocessing.py`.
 | Recommendation | `app/utils/maintenance_rules.py` evaluates prioritized efficiency, cleanliness, and age rules |
 | Reports | `app/routes/reports.py` checks result ownership and streams user-language-selected PDF/Excel from `app/utils/report_generator.py`; bundled Noto fonts shape Indic PDF text |
 | Browser charts | `app/templates/results.html` renders the age curve, current-age and 0.40 markers, and top eight global feature importances with Chart.js |
-| Deployment | Render uses the two-worker Procfile Gunicorn command; PythonAnywhere uses its WSGI entry point; Docker uses Python 3.11 slim and a non-root Gunicorn user |
+| Deployment | Render uses one Gunicorn worker with two threads and a 120-second timeout; PythonAnywhere uses its WSGI entry point; Docker uses Python 3.11 slim, a non-root user, and `/health` health checks |
 
 ## Preprocessing and model artifacts
 
@@ -41,7 +41,10 @@ categorical columns use the documented defaults, and unknown category values
 are safely mapped to those defaults with a notice. The single-panel form keeps
 strict categorical validation.
 
-Batch uploads are limited to 50,000 records and inferred in 5,000-row chunks.
+Batch uploads fuzzy-match only unambiguous near-headers and require at least
+one recognized numeric feature; missing numeric features use saved training
+medians and are noted on the result page. Batch uploads are limited to 50,000
+records and inferred in 5,000-row chunks.
 If `efficiency` is included, non-zero numeric target values are compared to
 predictions with MAE, RMSE, and R²; invalid and zero values are counted as
 ignored. Upload result pages show up to ten output rows and a scatter plot

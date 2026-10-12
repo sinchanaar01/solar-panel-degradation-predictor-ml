@@ -117,12 +117,14 @@ the dashboard.
 1. Create an account that meets the displayed password policy and log in.
 2. Choose **Predict** for a manual input. Simple mode is the default; advanced
    mode exposes all 15 model features.
-3. For CSV uploads, provide the 12 numeric features; `string_id`, `error_code`,
+3. For CSV uploads, include at least one numeric feature; missing numeric
+   features are filled with saved training medians. `string_id`, `error_code`,
    and `installation_type` are optional. An `id` and `efficiency` target are
-   not required. Headers with common unit suffixes or aliases are normalized,
-   and comma-, semicolon-, and tab-delimited files are supported. Blank or
-   unknown category values use documented defaults and produce a notice;
-   arbitrary panel identifiers are retained as `panel_id` in the download.
+   not required. Headers with common unit suffixes, aliases, or unambiguous
+   near-matches are normalized, and comma-, semicolon-, and tab-delimited files
+   are supported. Blank or unknown category values use documented defaults
+   and produce a notice; arbitrary panel identifiers are retained as
+   `panel_id` in the download.
    Uploads are limited to 50,000 rows and predicted in 5,000-row chunks.
    When `efficiency` is present, non-zero values are compared with predictions
    using MAE, RMSE, and R²; zero or invalid targets are excluded from those
@@ -165,8 +167,9 @@ five languages and both desktop and 375px viewport filenames.
   model's 0–35 year input range; tree predictions are non-smooth.
 - The forecast's linear fit summarizes a non-smooth tree-model curve and is not
   a guarantee that field performance changes linearly with age.
-- CSV uploads are limited by the configured request-size limit and required
-  feature schema.
+- CSV uploads are limited by the configured request-size limit and require at
+  least one recognized numeric feature; missing values and features use
+  training medians, which can reduce prediction reliability.
 - Unknown categorical values are mapped to the relevant default group, so
   predictions for those rows rely mainly on the numeric inputs.
 - SQLite and in-memory rate-limit storage are appropriate for a local review
